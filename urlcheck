@@ -61,7 +61,10 @@ runcheck() {
 					echo "$URL"
 					;;
 				"rsync")
-					rsync --list-only -- rsync://rsync.samba.org/rsyncftp/tech_report.fffps &>/dev/null && echo "$URL"
+					rsync --list-only -- $URL &>/dev/null && echo "$URL"
+					;;
+				"ssh")
+					# TODO
 					;;
 				"hib")
 					echo "$URL"
