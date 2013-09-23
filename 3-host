@@ -10,7 +10,7 @@ prep() {
 
 coalesce() {
 	if [[ -f res/goodurls ]]; then
-		comm -23 (sort res/urllist) <(sort res/goodurls) | sponge res/urllist
+		comm -23 <(sort res/urllist) <(sort res/goodurls) | sponge res/urllist
 		rm res/goodurls
 	fi
 }
