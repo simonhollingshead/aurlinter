@@ -21,20 +21,21 @@ urlcheck() {
 	HOSTPATH='"$HOSTPATH"'
 
 	fetch_http() {
-		# First, try a standard HEAD request.  2xx is a good reply, malformed URL or failed DNS resolve immediately halt.
+		# First, try a standard HEAD request.  Malformed URL or failed DNS resolve immediately halt.
 		QUERY1=$(curl -sIkLA "$UA" -m 15 -o /dev/null -w %{http_code} -- "$1")
 		ERRCODE=$?
-		{ [[ "$QUERY1" -ge 200 ]] && [[ "$QUERY1" -lt 300 ]]; } && return 0
+		[[ "$QUERY1" == "200" ]] && return 0
 		[[ "$ERRCODE" -eq 3 ]] && echo "http: Malformed URL $@." >&2 && return 1
 		[[ "$ERRCODE" -eq 6 ]] && echo "http: DNS lookup failed for $@." >&2 && return 1
 
-		# Second chance, for those that block HEAD.  Use GET, but with a partial request for the first byte only.  2xx good.
+		# Second chance, for those that block HEAD.  Use GET, but with a partial request for the first byte only.
+		# 206 is expected, but some that follow spec badly still give 200 OK.
 		QUERY2=$(curl -skLA "$UA" -m 15 -o /dev/null --header "Range: bytes=0-1" -w %{http_code} -- "$1")
-		{ [[ "$QUERY2" -ge 200 ]] && [[ "$QUERY2" -lt 300 ]]; } && return 0
+		{ [[ "$QUERY2" == "206" ]] || [[ "$QUERY2" == "200" ]]; } && return 0
 
 		# Last chance!  Make curl use GET, but internally think it asked for HEAD.  Stops it fetching actual content.
 		QUERY3=$(curl -sIkLA "$UA" -X GET -m 15 -o /dev/null -w %{http_code} -- "$1")
-		{ [[ "$QUERY3" -ge 200 ]] && [[ "$QUERY3" -lt 300 ]]; } && return 0
+		{ [[ "$QUERY2" == "206" ]] || [[ "$QUERY2" == "200" ]]; } && return 0
 
 		# We tried our very best.
 		[[ "$QUERY3" == "000" ]] && echo "http: Connection to $@ timed out." >&2 && return 1
