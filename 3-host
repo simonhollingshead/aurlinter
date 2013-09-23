@@ -76,6 +76,9 @@ urlcheck() {
 			"2")
 				echo "git: Remote repository no longer contains the requested fragment for $@." >&2
 				;;
+			"99")
+				echo "git: Connection forcibly timed out to $@." >&2
+				;;
 			"128")
 				echo "git: Could not connect to $@." >&2
 				;;

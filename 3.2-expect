@@ -10,11 +10,13 @@ if { $match ne "" } {
 	spawn bash -c "export GIT_SSH='$export'; git ls-remote '$url'"
 }
 
+set timeout 10
 expect { 
   "Username for" {send \r; exp_continue}
   "Password for" {send \r; exp_continue}
-  default {}
+  timeout {exit 99}
   eof {}
+  default {}
 }
 
 catch wait result
