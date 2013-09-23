@@ -3,7 +3,7 @@
 source config
 
 prep() {
-	if [ ! -d ./res/sourced ]; then
+	if [[ ! -d ./res/sourced ]]; then
 		bsdtar -C ./res -xzf ./res/sourceall.tar.gz
 	fi
 }
