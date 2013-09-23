@@ -19,7 +19,6 @@ urlcheck() {
 	cat res/urllist | parallel -N 50 -j50 '
 	UA="Mozilla/5.0 (X11; Linux x86_64; rv:24.0) Gecko/20100101 Firefox/24.0"
 	HOSTPATH='"$HOSTPATH"'
-	RETURNVAL=""
 
 	fetch_http() {
 		# First, try a standard HEAD request.  2xx is a good reply, malformed URL or failed DNS resolve immediately halt.
