@@ -35,7 +35,7 @@ urlcheck() {
 
 		# Last chance!  Make curl use GET, but internally think it asked for HEAD.  Stops it fetching actual content.
 		QUERY3=$(curl -sIkLA "$UA" -X GET -m 15 -o /dev/null -w %{http_code} -- "$1")
-		{ [[ "$QUERY2" == "206" ]] || [[ "$QUERY2" == "200" ]]; } && return 0
+		{ [[ "$QUERY3" == "206" ]] || [[ "$QUERY3" == "200" ]]; } && return 0
 
 		# We tried our very best.
 		[[ "$QUERY3" == "000" ]] && echo "http: Connection to $@ timed out." >&2 && return 1
