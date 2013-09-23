@@ -1,0 +1,21 @@
+#!/usr/bin/expect -f
+
+set url [lindex $argv 0]
+set export [lindex $argv 1]
+set match [lindex $argv 2]
+
+if { $match ne "" } {
+	spawn bash -c "export GIT_SSH='$export'; git ls-remote --exit-code '$url' '$match'"
+} else {
+	spawn bash -c "export GIT_SSH='$export'; git ls-remote '$url'"
+}
+
+expect { 
+  "Username for" {send \r; exp_continue}
+  "Password for" {send \r; exp_continue}
+  default {}
+  eof {}
+}
+
+catch wait result
+exit [lindex $result 3]

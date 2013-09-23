@@ -1,0 +1,51 @@
+#!/bin/bash
+
+source config
+
+cleanup() {
+	rm -rf "$RELHOSTPATH"/{"$DLDIR"{/gz,/ext},"$RESULTDIR"}/
+	mkdir -p "$RELHOSTPATH"/{"$DLDIR"{/gz,/ext},"$RESULTDIR"}/
+	chmod 777 "$RELHOSTPATH"/"$RESULTDIR"/
+}
+
+genpkgs() {
+	./href > "$RELHOSTPATH"/"$DLDIR"/urls
+	aria2c -d "$RELHOSTPATH"/"$DLDIR"/gz -c -i "$RELHOSTPATH"/"$DLDIR"/urls
+	rm "$RELHOSTPATH"/"$DLDIR"/urls
+}
+
+extractpkgs() {
+	# First piece of actual testing.  For each downloaded archive, extract.
+	# If A.tar.gz doesn't extract only contain a folder called A then report it.
+	# bsdtar is far better with some of the oddball compression tools the maintainers have used.
+	# An option for tarbombs would be for the -C parameter to bsdtar to be /TMP, but DLDIR is self contained enough.
+	# If a package starts overwriting another package's directory, then that'll get caught later.
+	# Blacklisting can just be a grep between 'done' and 'parallel' in the pipeline.
+	for i in "$RELHOSTPATH"/"$DLDIR"/gz/*.tar.gz
+	do
+		printf "%s\n" "$i"
+	done | parallel -j8 -k '
+	TMP={}           # RELHOSTPATH/DLDIR/gz/A.tar.gz
+	TMP=${TMP##*/}   # A.tar.gz
+	TMP=${TMP%.tar.gz} # A
+	OUT=$(bsdtar -C "'"$RELHOSTPATH"'"/"'"$DLDIR"'"/ext -xvf "{}" 2>&1)
+	OUTBADNAME=$(printf "%b" "$OUT" | grep -iv "^x $TMP$\|^x $TMP/\|^bsdtar:")
+	OUTERR=$(printf "%b" "$OUT" | grep -i ":\|^bsdtar:")
+	if [[ "$OUTBADNAME""$OUTERR" != "" ]]; then
+		printf "%s:\n" "$TMP"
+		[[ "$OUTBADNAME" != "" ]] && printf "Incorrect directory names:\n%b\n\n" "$OUTBADNAME"
+		[[ "$OUTERR" != "" ]] && printf "Decompression errors generated:\n%b\n\n" "$OUTERR"
+		printf "\n"
+	fi
+	' > "$RELHOSTPATH"/"$RESULTDIR"/extractbugs
+
+	stat -c "%F %a %n" "$RELHOSTPATH"/"$DLDIR"/ext/* | grep -v "^directory 755 \|regular file " > "$RELHOSTPATH"/"$RESULTDIR"/permissionbugs
+	chmod 755 -c --preserve-root "$RELHOSTPATH"/"$DLDIR"/ext/*
+
+	find ./prep/ext -type f -executable | parallel -m 'stat -c "%A %n" {}' > "$RELHOSTPATH"/"$RESULTDIR"/executablebugs 
+	find ./prep/ext -type f ! -perm 644 | parallel -m 'chmod 644 -c --preserve-root {}'
+}
+
+#cleanup
+#genpkgs
+#extractpkgs

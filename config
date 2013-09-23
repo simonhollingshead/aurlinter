@@ -1,0 +1,14 @@
+# Folder naming
+DLDIR=prep
+RESULTDIR=res
+
+# Define the absolute path from the guest to the directory downloads and results will be in, and the relative location of it on the host as compared to this script.
+HOSTPATH=/home/aurlinter/aurlinter/
+VMHOSTPATH=/smb/francium
+RELHOSTPATH=.
+
+# To stop requests across the SMB boundary, designate a working directory inside the guest.  Also designate somewhere in TMP we can put the results.
+VMWORKDIR=/home/aur
+VMTMPDIR=/tmp/vm
+VMUSER=aur
+NSPAWN_CONTAINER=/vm

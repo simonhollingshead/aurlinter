@@ -1,0 +1,55 @@
+#!/bin/bash
+source config
+
+SOURCEARCH=("x86_64" "i686")
+FILEPATHS=($1)
+
+for FILEPATH in "${FILEPATHS[@]}"
+do
+	DIRPATH="${FILEPATH%/*}"
+	DIRNAME="${DIRPATH##*/}"
+
+	if [[ ! -f "$VMTMPDIR"/sourced/"$DIRNAME" ]] || [[ -f "$VMTMPDIR"/doing-"$DIRNAME" ]]; then
+		for CARCH in "${SOURCEARCH[@]}"
+		do
+			# Subshell to stop the mess of variables some PKGBUILDs will inevitably create.
+			# Set breaks functions onto multiple lines, messing up the sort, so grep away all functions.
+			# To try to keep this test frame out of the way of the PKGBUILD, verbosely named readonly variables are used.
+			# This is also important to ensure the diff between the two 'set' operations really is a subset of set - so I can source it later.
+
+			# FIXME: If I make setbefore and setafter into variables, the `comm` makes the subshell zombie.
+			# For 40k PKGBUILDs and two CARCHes, this is bad!
+			(
+				unset FILEPATHS
+				readonly ROVMTMPDIR="$VMTMPDIR"
+				readonly RODIRNAME="$DIRNAME"
+				readonly ROHOSTNAME="$HOSTNAME"
+				readonly ROCARCH="$CARCH"
+				cd "$VMWORKDIR"
+				set | grep -v '^[[:space:]]\|^[^=]*$\|^BASH_ARGV=' | sort > "$ROVMTMPDIR"/setbefore-"$RODIRNAME"
+				touch "$ROVMTMPDIR"/doing-"$RODIRNAME"-"$ROCARCH"
+				source "$FILEPATH" > "$ROVMTMPDIR"/stdout-"$RODIRNAME" 2> "$ROVMTMPDIR"/stderr-"$RODIRNAME" <<< yes ''
+				rm "$ROVMTMPDIR"/doing-"$RODIRNAME"-"$ROCARCH"
+				[[ -s "$ROVMTMPDIR"/stdout-"$RODIRNAME" ]] && STDOUT=$(cat "$ROVMTMPDIR"/stdout-"$RODIRNAME")
+				[[ -s "$ROVMTMPDIR"/stderr-"$RODIRNAME" ]] && STDERR=$(cat "$ROVMTMPDIR"/stderr-"$RODIRNAME")
+				rm "$ROVMTMPDIR"/stdout-"$RODIRNAME" "$ROVMTMPDIR"/stderr-"$RODIRNAME" > /dev/null
+				set | grep -v '^[[:space:]]\|^[^=]*$\|^BASH_ARGV=' | sort > "$ROVMTMPDIR"/setafter-"$RODIRNAME"
+				comm -13 "$ROVMTMPDIR"/setbefore-"$RODIRNAME" "$ROVMTMPDIR"/setafter-"$RODIRNAME" | grep -v "^_\|^PIPESTATUS=" > "$ROVMTMPDIR"/sourced/"$RODIRNAME"-"$ROCARCH"
+				rm "$ROVMTMPDIR"/setafter-"$RODIRNAME"
+				IFS=$'\n'
+				echo "${source[*]}" >> "$VMTMPDIR"/sources-"$ROHOSTNAME"
+				echo "$url" >> "$VMTMPDIR"/urls-"$ROHOSTNAME"
+			)
+			# If the PKGBUILD exits, things like stdout/stderr are good to keep.  Things below aren't.
+			rm "$VMTMPDIR"/setbefore-"$DIRNAME"
+		done
+
+		ITERCNT="${#SOURCEARCH[@]}"
+		ITERCNTMINONE=$(expr "$ITERCNT" - 1)
+		for (( i=1; i<"$ITERCNT"; i++ ))
+		do
+			cmp -s "$VMTMPDIR"/sourced/"$DIRNAME"-{"${SOURCEARCH[$i-1]}","${SOURCEARCH[$i]}"} || break
+			[[ "$i" == "$ITERCNTMINONE" ]] && cp "$VMTMPDIR"/sourced/"$DIRNAME"-{"${SOURCEARCH[$i-1]}",allarches} && rm ${SOURCEARCH[@]/#/$VMTMPDIR/sourced/$DIRNAME-}
+		done
+	fi
+done
