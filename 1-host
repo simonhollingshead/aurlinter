@@ -24,7 +24,7 @@ extractpkgs() {
 	for i in "$RELHOSTPATH"/"$DLDIR"/gz/*.tar.gz
 	do
 		printf "%s\n" "$i"
-	done | parallel -j8 -k '
+	done | SHELL=/usr/bin/bash parallel -j8 -k '
 	TMP={}           # RELHOSTPATH/DLDIR/gz/A.tar.gz
 	TMP=${TMP##*/}   # A.tar.gz
 	TMP=${TMP%.tar.gz} # A
@@ -40,8 +40,8 @@ extractpkgs() {
 	stat -c "%F %a %n" "$RELHOSTPATH"/"$DLDIR"/ext/* | grep -v "^directory 755 \|regular file " > "$RELHOSTPATH"/"$RESULTDIR"/permissionbugs
 	chmod 755 -c --preserve-root "$RELHOSTPATH"/"$DLDIR"/ext/*
 
-	find ./prep/ext -type f -executable | parallel -m 'stat -c "%A %n" {}' > "$RELHOSTPATH"/"$RESULTDIR"/executablebugs 
-	find ./prep/ext -type f ! -perm 644 | parallel -m 'chmod 644 -c --preserve-root {}'
+	find ./prep/ext -type f -executable | SHELL=/usr/bin/bash parallel -m 'stat -c "%A %n" {}' > "$RELHOSTPATH"/"$RESULTDIR"/executablebugs 
+	find ./prep/ext -type f ! -perm 644 | SHELL=/usr/bin/bash parallel -m 'chmod 644 -c --preserve-root {}'
 }
 
 #cleanup

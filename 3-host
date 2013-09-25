@@ -16,7 +16,7 @@ coalesce() {
 }
 
 urlcheck() {
-	cat res/urllist | parallel -N 50 -j50 '
+	cat res/urllist | SHELL=/usr/bin/bash parallel -N 50 -j50 '
 	UA="Mozilla/5.0 (X11; Linux x86_64; rv:24.0) Gecko/20100101 Firefox/24.0"
 	HOSTPATH='"$HOSTPATH"'
 
@@ -259,7 +259,7 @@ REPORTHEADER
 
 	if [[ "$VERBOSITY" -ge 3 ]]; then
 		echo
-		echo "====================================[Extracted folder permissions]"
+		echo "========================================[Extracted folder permissions]"
 		if [[ "$VERBOSITY" -ge 5 ]]; then
 			cat res/permissionbugs
 		else
@@ -293,6 +293,23 @@ REPORTHEADER
 			echo "${i%-*}"
 		done | uniq 
 	fi
+	popd >/dev/null
+
+	echo
+	echo "=================================================[Main package faults]"
+	pushd ./res/sourced/ >/dev/null	
+	VALIDOPTIONS="strip\|docs\|libtool\|staticlibs\|emptydirs\|zipman\|purge\|upx\|debug\|ccache\|distcc\|buildflags\|makeflags"
+	VALIDILICENSES="AGPL\|AGPL3\|Artistic2.0\|CCPL\|CDDL\|CPL\|EPL\|FDL\|FDL1.2\|FDL1.3\|GPL\|GPL2\|GPL3\|LGPL\|LGPL2.1\|LGPL3\|LPPL\|MPL\|PerlArtistic\|PHP\|PSF\|RUBY\|W3C\|ZPL\|zsync\|BSD\|MIT\|Python\|zlib/libpng"
+	VALIDLICENSES="Apache\|APACHE"
+	[[ "$VERBOSITY" -ge 3 ]] && BASEANDDEVEL=$(expac -Sg '%n' base base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk '{print $1;}' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' | SHELL=/usr/bin/bash parallel -j8 'echo {}; expac -S1 "%S" {} | sed "s/  /\n/g" | grep -v "\.so$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++')
+	find . -type f | sort | SHELL=/usr/bin/bash parallel -j8 '
+		INPUT=({})
+		for PACKAGE in "$INPUT[@]"
+		do
+			source "$PACKAGE"
+			echo "$pkgname"
+		done
+	'
 	popd >/dev/null
 }
 

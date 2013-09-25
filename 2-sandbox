@@ -23,7 +23,7 @@ sourceall() {
 	# Depth 1 is where all the tarbombs went, and all those PKGBUILDS overwrote each other anyway, so it's a scattering of files from many src archives.
 	# systemd-nspawn <=207 will need to have msg, msg2, error, warning and plain touched in /usr/bin.  89acb09394 fixed that.
 	# TODO: systemd-nspawn is noisy, saying every time a container is created and exits (which gets buffered into parallel)
-	find "$VMWORKDIR"/ext -mindepth 2 -type f -name PKGBUILD | grep -v "/openttd-bin-r25151/" | parallel -m -j8 "
+	find "$VMWORKDIR"/ext -mindepth 2 -type f -name PKGBUILD | grep -v "/openttd-bin-r25151/" | SHELL=/usr/bin/bash parallel -m -j8 "
 		sudo systemd-nspawn --machine='container-{#}' --bind-ro=/usr/bin/echo:/usr/bin/msg --bind-ro=/usr/bin/echo:/usr/bin/msg2 --bind-ro=/usr/bin/echo:/usr/bin/error --bind-ro=/usr/bin/echo:/usr/bin/warning --bind-ro=/usr/bin/echo:/usr/bin/plain --bind-ro='$VMHOSTPATH/2.1-nspawn' --bind-ro='$VMHOSTPATH/config' --bind-ro='$VMWORKDIR' --bind='$VMTMPDIR' --private-network -D '$NSPAWN_CONTAINER' /usr/bin/su - $VMUSER -c "'"'"cd $VMHOSTPATH; $VMHOSTPATH/2.1-nspawn '{}'"'"'"
 	"
 }
