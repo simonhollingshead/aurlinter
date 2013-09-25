@@ -20,7 +20,7 @@ extractpkgs() {
 	# bsdtar is far better with some of the oddball compression tools the maintainers have used.
 	# An option for tarbombs would be for the -C parameter to bsdtar to be /TMP, but DLDIR is self contained enough.
 	# If a package starts overwriting another package's directory, then that'll get caught later.
-	# Blacklisting can just be a grep between 'done' and 'parallel' in the pipeline.
+	# Blacklisting can just be a grep between 'done' and 'parallel' in the pipeline, e.g. for zipbombs.
 	for i in "$RELHOSTPATH"/"$DLDIR"/gz/*.tar.gz
 	do
 		printf "%s\n" "$i"
@@ -32,10 +32,8 @@ extractpkgs() {
 	OUTBADNAME=$(printf "%b" "$OUT" | grep -iv "^x $TMP$\|^x $TMP/\|^bsdtar:")
 	OUTERR=$(printf "%b" "$OUT" | grep -i ":\|^bsdtar:")
 	if [[ "$OUTBADNAME""$OUTERR" != "" ]]; then
-		printf "%s:\n" "$TMP"
-		[[ "$OUTBADNAME" != "" ]] && printf "Incorrect directory names:\n%b\n\n" "$OUTBADNAME"
-		[[ "$OUTERR" != "" ]] && printf "Decompression errors generated:\n%b\n\n" "$OUTERR"
-		printf "\n"
+		[[ "$OUTBADNAME" != "" ]] && printf "W: Incorrect directory names in %s:\n%b\n\n" "$TMP" "$OUTBADNAME"
+		[[ "$OUTERR" != "" ]] && printf "E: Errors in decompressing %s:\n%b\n\n" "$TMP" "$OUTERR"
 	fi
 	' > "$RELHOSTPATH"/"$RESULTDIR"/extractbugs
 

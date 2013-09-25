@@ -21,6 +21,8 @@ urlcheck() {
 	HOSTPATH='"$HOSTPATH"'
 
 	fetch_http() {
+		# FIXME: All of the QUERYx for HTTP use the -k flag since people could install their own certs.
+		# FIXME continued: If there was some policy that people cannot be expected to install new certs, they can be removed.
 		# First, try a standard HEAD request.  Malformed URL or failed DNS resolve immediately halt.
 		QUERY1=$(curl -sIkLA "$UA" -m 15 -o /dev/null -w %{http_code} -- "$1")
 		ERRCODE=$?
@@ -215,9 +217,6 @@ urlcheck() {
 			 	"scp")
 			 		# TODO
 			 		;;
-			 	"file")
-			 		echo "$URL"
-			 		;;
 			 	*)
 			 		case "$HINT" in
 			 			"git")
@@ -243,9 +242,73 @@ urlcheck() {
 	' >res/goodurls 2>res/faillog
 }
 
+genreport() {
+	cat <<REPORTHEADER
+Each package was sourced in a container with only base and base-devel, with a read-only working directory and no network connection.  This is intentional, since the act of sourcing should not be writing files, downloading files, or using anything that cannot be checked against the dependency array by makepkg first.
+
+REPORTHEADER
+
+	echo "==========================================================[Extraction]"
+	if [[ "$VERBOSITY" -ge 5 ]]; then
+		cat res/extractbugs
+	elif [[ "$VERBOSITY" -ge 3 ]]; then
+		cat res/extractbugs | grep "^E: \|^W: " | sed 's/:$//'
+	else
+		cat res/extractbugs | grep "^E: " | sed 's/:$//'
+	fi
+
+	if [[ "$VERBOSITY" -ge 3 ]]; then
+		echo
+		echo "====================================[Extracted folder permissions]"
+		if [[ "$VERBOSITY" -ge 5 ]]; then
+			cat res/permissionbugs
+		else
+			cat res/permissionbugs | sed 's|.*/||'
+		fi
+	fi
+
+	echo
+	echo "=================================[PKGBUILDs that exited during source]"
+	pushd ./res/temporary >/dev/null
+	if [[ "$VERBOSITY" -ge 3 ]]; then
+		for j in $(
+			for i in *
+			do
+				[[ -e "$i" ]] || continue
+				echo "${i%-*}"
+			done | uniq)
+		do
+			echo "$j:"
+			for k in "$j-"*
+			do
+				[[ -e "$k" ]] || continue
+				[[ -s "$k" ]] && tail -v "$k"
+			done
+			echo
+		done
+	else
+		for i in *
+		do
+			[[ -e "$i" ]] || continue
+			echo "${i%-*}"
+		done | uniq 
+	fi
+	popd >/dev/null
+}
+
+VERBOSITY=0
+while getopts "v" OPTION; do
+	case "$OPTION" in
+		v)
+			VERBOSITY=$(($VERBOSITY+1))
+			;;
+	esac	
+done
+
 # prep
 # coalesce
 # urlcheck
 # coalesce
 # urlcheck
 # coalesce
+genreport

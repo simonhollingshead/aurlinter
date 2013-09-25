@@ -17,6 +17,7 @@ sync() {
 sourceall() {
 	rm -rf "$VMTMPDIR"
 	mkdir -p "$VMTMPDIR/sourced"
+	mkdir -p "$VMTMPDIR/temporary"
 
 	# Blacklist just consists of a grep -v before piping into the parallel operation.
 	# Depth 1 is where all the tarbombs went, and all those PKGBUILDS overwrote each other anyway, so it's a scattering of files from many src archives.
