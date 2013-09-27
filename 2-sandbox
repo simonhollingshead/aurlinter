@@ -6,7 +6,7 @@
 source config
 
 update() {
-	sudo pacman -Syu
+	sudo /usr/bin/pacman -Syu
 	sudo systemd-nspawn -D "$NSPAWN_CONTAINER" /usr/bin/pacman -Syu
 }
 

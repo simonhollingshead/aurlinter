@@ -13,12 +13,15 @@ do
 		for CARCH in "${SOURCEARCH[@]}"
 		do
 			# Subshell to stop the mess of variables some PKGBUILDs will inevitably create.
-			# Set breaks functions onto multiple lines, messing up the sort, so grep away all functions.
-			# To try to keep this test frame out of the way of the PKGBUILD, verbosely named readonly variables are used.
+			# Set breaks functions onto multiple lines, messing up the sort.
+			# To try to keep this test framework out of the way of the PKGBUILD, verbosely named readonly variables are used.
 			# This is also important to ensure the diff between the two 'set' operations really is a subset of set - so I can source it later.
 
 			# FIXME: If I make setbefore and setafter into variables, the `comm` makes the subshell zombie.
 			# For 40k PKGBUILDs and two CARCHes, this is bad!
+
+			# compgen is used since set with newlines does not work correctly and does not promise a valid subset of set.
+			# compgen will give each var on a newline, so its count should match set to guarantee safety in use of sort and grep.
 			(
 				unset FILEPATHS
 				readonly ROVMTMPDIR="$VMTMPDIR"
@@ -28,12 +31,15 @@ do
 				readonly ROSTDOUTLOC="$VMTMPDIR"/temporary/"$DIRNAME"-"$CARCH"-stdout
 				readonly ROSTDERRLOC="$VMTMPDIR"/temporary/"$DIRNAME"-"$CARCH"-stderr
 				cd "$VMWORKDIR"
-				set | grep -v '^[[:space:]]\|^[^=]*$\|^BASH_ARGV=' | sort > "$ROVMTMPDIR"/setbefore-"$RODIRNAME"
+				unset -f $(declare -F | cut -d " " -f3)
+				set | grep -v '^BASH_ARGV=' | sort > "$ROVMTMPDIR"/setbefore-"$RODIRNAME"
 				source "$FILEPATH" > "$ROSTDOUTLOC" 2> "$ROSTDERRLOC" <<< yes ''
 				[[ -s "$ROSTDOUTLOC" ]] && STDOUT=$(cat "$ROSTDOUTLOC")
 				[[ -s "$ROSTDERRLOC" ]] && STDERR=$(cat "$ROSTDERRLOC")
+				unset -f $(declare -F | cut -d " " -f3)
+				[[ $(compgen -v | grep -vx "BASH_COMMAND\|BASHPID\|BASH_SUBSHELL\|COMP_WORDBREAKS\|HISTCMD\|LINENO\|RANDOM\|SECONDS" | wc -l) != $(set | wc -l) ]] && echo "Analysis forcibly terminated, cannot handle newlines in array content." >> "$ROSTDERRLOC" && exit
 				rm "$ROSTDOUTLOC" "$ROSTDERRLOC" > /dev/null
-				set | grep -v '^[[:space:]]\|^[^=]*$\|^BASH_ARGV=' | sort > "$ROVMTMPDIR"/setafter-"$RODIRNAME"
+				set | grep -v '^BASH_ARGV=' | sort > "$ROVMTMPDIR"/setafter-"$RODIRNAME"
 				comm -13 "$ROVMTMPDIR"/setbefore-"$RODIRNAME" "$ROVMTMPDIR"/setafter-"$RODIRNAME" | grep -v "^_\|^PIPESTATUS=" > "$ROVMTMPDIR"/sourced/"$RODIRNAME"-"$ROCARCH"
 				rm "$ROVMTMPDIR"/setafter-"$RODIRNAME"
 				IFS=$'\n'

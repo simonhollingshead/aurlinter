@@ -268,7 +268,7 @@ REPORTHEADER
 	fi
 
 	echo
-	echo "=================================[PKGBUILDs that exited during source]"
+	echo "=========================================[PKGBUILDs unable to be analysed]"
 	pushd ./res/temporary >/dev/null
 	if [[ "$VERBOSITY" -ge 3 ]]; then
 		for j in $(
@@ -302,12 +302,14 @@ REPORTHEADER
 	VALIDILICENSES="AGPL\|AGPL3\|Artistic2.0\|CCPL\|CDDL\|CPL\|EPL\|FDL\|FDL1.2\|FDL1.3\|GPL\|GPL2\|GPL3\|LGPL\|LGPL2.1\|LGPL3\|LPPL\|MPL\|PerlArtistic\|PHP\|PSF\|RUBY\|W3C\|ZPL\|zsync\|BSD\|MIT\|Python\|zlib/libpng"
 	VALIDLICENSES="Apache\|APACHE"
 	[[ "$VERBOSITY" -ge 3 ]] && BASEANDDEVEL=$(expac -Sg '%n' base base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk '{print $1;}' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' | SHELL=/usr/bin/bash parallel -j8 'echo {}; expac -S1 "%S" {} | sed "s/  /\n/g" | grep -v "\.so$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++')
-	find . -type f | sort | SHELL=/usr/bin/bash parallel -j8 '
+	find . -type f | sort | SHELL=/usr/bin/bash parallel -k -N 5 -j8 '
 		INPUT=({})
-		for PACKAGE in "$INPUT[@]"
+		for PACKAGE in "${INPUT[@]}"
 		do
 			source "$PACKAGE"
-			echo "$pkgname"
+			EXTRACTEDDIRNAME="${PACKAGE##*/}"
+			EXTRACTEDDIRNAME="${EXTRACTEDDIRNAME%-*}"
+			[[ "$pkgname" != "$EXTRACTEDDIRNAME" ]] && echo "$pkgname versus $EXTRACTEDDIRNAME"
 		done
 	'
 	popd >/dev/null
