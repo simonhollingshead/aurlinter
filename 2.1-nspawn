@@ -30,28 +30,33 @@ do
 				readonly ROCARCH="$CARCH"
 				readonly ROSTDOUTLOC="$VMTMPDIR"/temporary/"$DIRNAME"-"$CARCH"-stdout
 				readonly ROSTDERRLOC="$VMTMPDIR"/temporary/"$DIRNAME"-"$CARCH"-stderr
+
 				cd "$VMWORKDIR"
 				unset -f $(declare -F | cut -d " " -f3)
-				set | grep -v '^BASH_ARGV=' | sort > "$ROVMTMPDIR"/setbefore-"$RODIRNAME"
+				set | sort > "$ROVMTMPDIR"/setbefore-"$RODIRNAME"
+				
 				source "$FILEPATH" > "$ROSTDOUTLOC" 2> "$ROSTDERRLOC" <<< yes ''
+
 				[[ -s "$ROSTDOUTLOC" ]] && STDOUT=$(cat "$ROSTDOUTLOC")
 				[[ -s "$ROSTDERRLOC" ]] && STDERR=$(cat "$ROSTDERRLOC")
 				unset -f $(declare -F | cut -d " " -f3)
-				[[ $(compgen -v | grep -vx "BASH_COMMAND\|BASHPID\|BASH_SUBSHELL\|COMP_WORDBREAKS\|HISTCMD\|LINENO\|RANDOM\|SECONDS" | wc -l) != $(set | wc -l) ]] && echo "Analysis forcibly terminated, cannot handle newlines in array content." >> "$ROSTDERRLOC" && exit
+				set | sort > "$ROVMTMPDIR"/setafter-"$RODIRNAME"
+
+				# Minus BASH_COMMAND, BASHPID, BASH_SUBSHELL, COMP_WORDBREAKS, HISTCMD, LINENO, RANDOM, SECONDS.
+				[[ $(($(compgen -v | sort | wc -l) - 8)) != $(cat "$ROVMTMPDIR"/setafter-"$RODIRNAME" | wc -l) ]] && echo "Analysis forcibly terminated, cannot handle newlines in array content." >> "$ROSTDERRLOC" && exit
 				rm "$ROSTDOUTLOC" "$ROSTDERRLOC" > /dev/null
-				set | grep -v '^BASH_ARGV=' | sort > "$ROVMTMPDIR"/setafter-"$RODIRNAME"
-				comm -13 "$ROVMTMPDIR"/setbefore-"$RODIRNAME" "$ROVMTMPDIR"/setafter-"$RODIRNAME" | grep -v "^_\|^PIPESTATUS=" > "$ROVMTMPDIR"/sourced/"$RODIRNAME"-"$ROCARCH"
-				rm "$ROVMTMPDIR"/setafter-"$RODIRNAME"
+				comm -13 "$ROVMTMPDIR"/setbefore-"$RODIRNAME" "$ROVMTMPDIR"/setafter-"$RODIRNAME" | grep -v "^_=\|^PIPESTATUS=\|^BASHOPTS=\|^BASH_REMATCH=\|^BASH_ARGV=\|^SHELLOPTS=" > "$ROVMTMPDIR"/sourced/"$RODIRNAME"-"$ROCARCH"
+				#(source "$ROVMTMPDIR"/sourced/"$RODIRNAME"-"$ROCARCH") || declare -p $(comm -13 "$ROVMTMPDIR"/setbefore-"$RODIRNAME" "$ROVMTMPDIR"/setafter-"$RODIRNAME" | grep -v "^_\|^PIPESTATUS=\|^BASHOPTS=\|^BASH_REMATCH=" | grep -o "^[^=]*") > "$ROVMTMPDIR"/sourced/"$RODIRNAME"-"$ROCARCH"
+				
 				IFS=$'\n'
 				echo "${source[*]}" >> "$VMTMPDIR"/sources-"$ROHOSTNAME"
 				echo "$url" >> "$VMTMPDIR"/urls-"$ROHOSTNAME"
 			)
-			# If the PKGBUILD exits, things like stdout/stderr are good to keep.  Things below aren't.
-			rm "$VMTMPDIR"/setbefore-"$DIRNAME"
+			rm "$VMTMPDIR"/setbefore-"$DIRNAME" "$VMTMPDIR"/setafter-"$DIRNAME" 2>/dev/null
 		done
 
 		ITERCNT="${#SOURCEARCH[@]}"
-		ITERCNTMINONE=$(expr "$ITERCNT" - 1)
+		ITERCNTMINONE=$(($ITERCNT - 1))
 		for (( i=1; i<"$ITERCNT"; i++ ))
 		do
 			cmp -s "$VMTMPDIR"/sourced/"$DIRNAME"-{"${SOURCEARCH[$i-1]}","${SOURCEARCH[$i]}"} || break

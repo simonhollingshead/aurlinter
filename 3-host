@@ -16,7 +16,7 @@ coalesce() {
 }
 
 urlcheck() {
-	cat res/urllist | SHELL=/usr/bin/bash parallel -N 50 -j50 '
+	SHELL=/usr/bin/bash parallel -N 50 -j50 '
 	UA="Mozilla/5.0 (X11; Linux x86_64; rv:24.0) Gecko/20100101 Firefox/24.0"
 	HOSTPATH='"$HOSTPATH"'
 
@@ -97,12 +97,12 @@ urlcheck() {
 			"revision")
 				RETURNVAL=$(svn info -r "$3" -- "$1" 2>&1)
 				[[ $? == 0 ]] && return 0
-				RETURNVAL=$(echo $RETURNVAL | grep -o "E[0-9]*" | tail -1)
+				RETURNVAL=$(echo "$RETURNVAL" | grep -o "E[0-9]*" | tail -1)
 				;;
 			"")
 				RETURNVAL=$(svn info -- "$1" 2>&1)
 				[[ $? == 0 ]] && return 0
-				RETURNVAL=$(echo $RETURNVAL | grep -o "E[0-9]*" | tail -1)
+				RETURNVAL=$(echo "$RETURNVAL" | grep -o "E[0-9]*" | tail -1)
 				;;
 			*)
 				false
@@ -148,12 +148,12 @@ urlcheck() {
 			"branch"|"revision"|"tag")
 				RETURNVAL=$(hg id -r "$3" -- "$1" 2>&1)
 				[[ $? == 0 ]] && return 0
-				RETURNVAL=$(echo $RETURNVAL | grep "^abort: ")
+				RETURNVAL=$(echo "$RETURNVAL" | grep "^abort: ")
 				;;
 			"")
 				RETURNVAL=$(hg id -r tip -- "$1" 2>&1)
 				[[ $? == 0 ]] && return 0
-				RETURNVAL=$(echo $RETURNVAL | grep "^abort: ")
+				RETURNVAL=$(echo "$RETURNVAL" | grep "^abort: ")
 				;;
 			*)
 				RETURNVAL="Unrecognised selector fragment."
@@ -239,7 +239,7 @@ urlcheck() {
 			esac
 		fi
 	done
-	' >res/goodurls 2>res/faillog
+	' :::: ./res/urllist >res/goodurls 2>res/faillog
 }
 
 genreport() {
@@ -252,9 +252,9 @@ REPORTHEADER
 	if [[ "$VERBOSITY" -ge 5 ]]; then
 		cat res/extractbugs
 	elif [[ "$VERBOSITY" -ge 3 ]]; then
-		cat res/extractbugs | grep "^E: \|^W: " | sed 's/:$//'
+		grep "^E: \|^W: " "./res/extractbugs" | sed 's/:$//'
 	else
-		cat res/extractbugs | grep "^E: " | sed 's/:$//'
+		grep "^E: " "./res/extractbugs" | sed 's/:$//'
 	fi
 
 	if [[ "$VERBOSITY" -ge 3 ]]; then
@@ -263,12 +263,12 @@ REPORTHEADER
 		if [[ "$VERBOSITY" -ge 5 ]]; then
 			cat res/permissionbugs
 		else
-			cat res/permissionbugs | sed 's|.*/||'
+			sed 's|.*/||' "./res/permissionbugs"
 		fi
 	fi
 
 	echo
-	echo "=========================================[PKGBUILDs unable to be analysed]"
+	echo "=====================================[PKGBUILDs unable to be analysed]"
 	pushd ./res/temporary >/dev/null
 	if [[ "$VERBOSITY" -ge 3 ]]; then
 		for j in $(
@@ -297,19 +297,83 @@ REPORTHEADER
 
 	echo
 	echo "=================================================[Main package faults]"
-	pushd ./res/sourced/ >/dev/null	
+	pushd ./res/sourced/ >/dev/null
+	VALIDARCHES=(any x86_64 i686 arm armv6h armv7h) # Order these with most popular first, since inarray ends early in such cases.
 	VALIDOPTIONS="strip\|docs\|libtool\|staticlibs\|emptydirs\|zipman\|purge\|upx\|debug\|ccache\|distcc\|buildflags\|makeflags"
 	VALIDILICENSES="AGPL\|AGPL3\|Artistic2.0\|CCPL\|CDDL\|CPL\|EPL\|FDL\|FDL1.2\|FDL1.3\|GPL\|GPL2\|GPL3\|LGPL\|LGPL2.1\|LGPL3\|LPPL\|MPL\|PerlArtistic\|PHP\|PSF\|RUBY\|W3C\|ZPL\|zsync\|BSD\|MIT\|Python\|zlib/libpng"
 	VALIDLICENSES="Apache\|APACHE"
+	# End of array markers below for iteration assistance.
+	ALLPKGFIELDS=(pkgname pkgver pkgrel pkgdesc url '-') # REQUIRED STRINGS
+	ALLPKGFIELDS+=(arch license '--') # REQUIRED ARRAYS
+	ALLPKGFIELDS+=(pkgdir srcdir startdir epoch pkgbase groups install changelog '---') # OTHER STRINGS
+	ALLPKGFIELDS+=(depends optdepends makedepends checkdepends provides conflicts replaces backup options source noextract md5sums sha1sums sha256sums sha384sums sha512sums) # OTHER ARRAYS
 	[[ "$VERBOSITY" -ge 3 ]] && BASEANDDEVEL=$(expac -Sg '%n' base base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk '{print $1;}' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' | SHELL=/usr/bin/bash parallel -j8 'echo {}; expac -S1 "%S" {} | sed "s/  /\n/g" | grep -v "\.so$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++')
-	find . -type f | sort | SHELL=/usr/bin/bash parallel -k -N 5 -j8 '
-		INPUT=({})
+	find . -type f | sort | SHELL=/usr/bin/bash parallel -k -N 25 -j8 '
+		inarray() { local n=$1 h; shift; for h; do [[ $n = "$h" ]] && return; done; return 1; }
+		validate_pkgname() { [[ "$ROVERBOSITY" -ge 4 ]] && [[ "$pkgname" != "$ROEXTRACTEDDIRNAME" ]] && echo "[*] Unzipped directory name and pkgname do not match.  ($ROEXTRACTEDDIRNAME =/= $pkgname)"; }
+		validate_pkgver() { [[ "$pkgrel" =~ [^A-Za-z0-9._] ]] && echo "[*] Disallowed pkgver format.  ($pkgver)"; }
+		validate_pkgrel() { [[ "$ROVERBOSITY" -ge 3 ]] && [[ "$pkgrel" =~ [^0-9] ]] && echo "[*] Non-integer or negative pkgrel.  ($pkgrel)"; }
+		validate_pkgdesc() { [[ "$ROVERBOSITY" -ge 3 ]] && grep -qwf <(echo "$pkgname") <(echo "$pkgdesc") && echo "[*] Found pkgname inside pkgdesc."; }
+		validate_url() { grep -qFf <(echo "$url" | sed "\|://|!d;s|/$||") "../urllist" && echo "[*] Could not connect to address in url field.  ($url)"; }
+		validate_arch() { [[ "$ROVERBOSITY" -ge 2 ]] && for ARCHITECTURENAME in "${arch[@]}"; do inarray "$ARCHITECTURENAME" "${ROVALIDARCHES[@]}" || echo "[*] Architecture not recognised.  ($ARCHITECTURENAME)"; done; }
+		validate_license() { return; }
+		validate_pkgdir() { [[ "$pkgdir" != "" ]] && echo "[*] Sets pkgdir.  (To $pkgdir)"; }
+		validate_srcdir() { [[ "$srcdir" != "" ]] && echo "[*] Sets srcdir.  (To $srcdir)"; }
+		validate_startdir() { [[ "$startdir" != "" ]] && echo "[*] Sets startdir.  (To $startdir)"; }
+		validate_epoch() { return; }
+		validate_pkgbase() { return; }
+		validate_groups() { return; }
+		validate_install() { [[ $install != "" ]] && [ ! -f "../../prep/ext/$ROEXTRACTEDDIRNAME/$install" ] && echo "[*] Install file not found in archive.  ($install)"; }
+		validate_changelog() { return; }
+		validate_depends() { return; }
+		validate_optdepends() { return; }
+		validate_makedepends() { return; }
+		validate_checkdepends() { return; }
+		validate_provides() { return; }
+		validate_conflicts() { return; }
+		validate_replaces() { return; }
+		validate_backup() { return; }
+		validate_options() { return; }
+		validate_source() { return; }
+		validate_noextract() { return; }
+		validate_md5sums() { return; }
+		validate_sha1sums() { return; }
+		validate_sha256sums() { return; }
+		validate_sha384sums() { return; }
+		validate_sha512sums() { return; }
+
+		INPUT=( {} )
 		for PACKAGE in "${INPUT[@]}"
 		do
-			source "$PACKAGE"
 			EXTRACTEDDIRNAME="${PACKAGE##*/}"
 			EXTRACTEDDIRNAME="${EXTRACTEDDIRNAME%-*}"
-			[[ "$pkgname" != "$EXTRACTEDDIRNAME" ]] && echo "$pkgname versus $EXTRACTEDDIRNAME"
+			RESULT=$(
+				readonly ROEXTRACTEDDIRNAME="$EXTRACTEDDIRNAME"
+				readonly ROVERBOSITY="'"$VERBOSITY"'"
+				readonly ROALLPKGFIELDS=('"${ALLPKGFIELDS[@]}"')
+				readonly ROVALIDARCHES=('"${VALIDARCHES[@]}"')
+				source "$PACKAGE" 2>/dev/null
+				[[ $(expr index "$(declare -p)" $'"'\r'"') != 0 ]] && echo "Aborting: Found line feeds.  Remember, CRLF PKGBUILDs cannot be sourced by makepkg." && exit
+				
+				REQUIREDFIELD=true
+				ISSTRING=true
+				for PKGBUILDFIELD in "${ROALLPKGFIELDS[@]}"
+				do
+					$REQUIREDFIELD && [[ "$PKGBUILDFIELD" == "-" ]] && ISSTRING=false && continue
+					$REQUIREDFIELD && [[ "$PKGBUILDFIELD" == "--" ]] && REQUIREDFIELD=false && ISSTRING=true && continue
+					[[ "$PKGBUILDFIELD" == "---" ]] && ISSTRING=false && continue
+
+					$REQUIREDFIELD && $ISSTRING && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] $PKGBUILDFIELD is not set."
+					$REQUIREDFIELD && ! $ISSTRING && TMPVAR="$PKGBUILDFIELD""[@]" && [[ "${!TMPVAR}" == "" ]] && echo "[*] $PKGBUILDFIELD is not set."
+					
+					validate_$PKGBUILDFIELD
+				done
+
+				exit 0
+			)
+			[[ $? == 1 ]] && RESULT="Aborting: Could not load data, likely due to use of an associative array."
+			
+			[[ $RESULT != "" ]] && echo "$EXTRACTEDDIRNAME" && echo "$RESULT" && echo
 		done
 	'
 	popd >/dev/null
@@ -319,7 +383,7 @@ VERBOSITY=0
 while getopts "v" OPTION; do
 	case "$OPTION" in
 		v)
-			VERBOSITY=$(($VERBOSITY+1))
+			VERBOSITY=$((VERBOSITY+1))
 			;;
 	esac	
 done
