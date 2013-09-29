@@ -56,7 +56,7 @@ do
 		done
 
 		ITERCNT="${#SOURCEARCH[@]}"
-		ITERCNTMINONE=$(($ITERCNT - 1))
+		ITERCNTMINONE=$((ITERCNT - 1))
 		for (( i=1; i<"$ITERCNT"; i++ ))
 		do
 			cmp -s "$VMTMPDIR"/sourced/"$DIRNAME"-{"${SOURCEARCH[$i-1]}","${SOURCEARCH[$i]}"} || break
