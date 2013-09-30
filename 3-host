@@ -308,7 +308,8 @@ REPORTHEADER
 	ALLPKGFIELDS+=(changelog epoch install pkgbase pkgdir srcdir startdir '---') # OTHER STRINGS
 	ALLPKGFIELDS+=(backup checkdepends conflicts depends groups makedepends md5sums noextract optdepends options provides replaces sha1sums sha256sums sha384sums sha512sums source) # OTHER ARRAYS
 	[[ "$VERBOSITY" -ge 3 ]] && BASEANDDEVEL=$(expac -Sg '%n' base base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk '{print $1;}' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' | SHELL=/usr/bin/bash parallel -j8 'echo {}; expac -S1 "%S" {} | sed "s/  /\n/g" | grep -v "\.so$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++')
-	find . -type f | sort | SHELL=/usr/bin/bash parallel -k -N 1 -j8 '
+	# Regular expressions below with a character count have to be written {number\} otherwise parallel understands it as the {n} option.  \{\} is interpreted as \{} instead.
+	find . -type f | sort | SHELL=/usr/bin/bash parallel -k -N 50 -j8 '
 		inarray() { local insensitive=$1 n=$2 h; shift 2; $insensitive && shopt -s nocasematch; for h; do [[ $n = "$h" ]] || continue; $insensitive && shopt -u nocasematch; return 0; done; shopt -u nocasematch; return 1; }
 		validate_pkgname() { [[ "$ROVERBOSITY" -ge 4 ]] && [[ "$pkgname" != "$ROEXTRACTEDDIRNAME" ]] && [[ "$pkgbase" != "$ROEXTRACTEDDIRNAME" ]] && echo "[*] Unzipped directory name and pkgname do not match.  ($ROEXTRACTEDDIRNAME =/= $pkgname)"; }
 		validate_pkgver() { [[ "$pkgrel" =~ [^A-Za-z0-9._] ]] && echo "[*] Disallowed pkgver format.  ($pkgver)"; }
@@ -336,11 +337,11 @@ REPORTHEADER
 		validate_options() { [[ "$ROVERBOSITY" -ge 3 ]] && local OPTIONNAME && for OPTIONNAME in "${options[@]}"; do { [[ $OPTIONNAME == "" ]] || inarray false "${OPTIONNAME#!}" "${ROVALIDOPTIONS[@]}"; } || echo "[*] Unknown option.  ($OPTIONNAME)"; done; }
 		validate_source() { local COMPARETO=$(IFS=$'"'\n'"'; grep -Fxf <(echo "${source[*]}" | sed "\|://|!d;s/::/\n/;s/^.*\n//;s|/$||") "../urllist"); [[ "$COMPARETO" != "" ]] && echo "[*] Could not connect to the following sources:" && echo "$COMPARETO"; }
 		validate_noextract() { return; }
-		validate_md5sums() { [[ "${#md5sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local MD5SUM && for MD5SUM in "${md5sums[@]}"; do { [[ "$MD5SUM" == "SKIP" ]] || [[ "$MD5SUM" =~ ^[0-9a-f]{32}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed md5sum.  ($MD5SUM)"; done; }
-		validate_sha1sums() { [[ "${#sha1sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA1SUM && for SHA1SUM in "${sha1sums[@]}"; do { [[ "$SHA1SUM" == "SKIP" ]] || [[ "$SHA1SUM" =~ ^[0-9a-f]{40}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha1sum.  ($SHA1SUM)"; done; }
-		validate_sha256sums() { [[ "${#sha256sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA256SUM && for SHA256SUM in "${sha256sums[@]}"; do { [[ "$SHA256SUM" == "SKIP" ]] || [[ "$SHA256SUM" =~ ^[0-9a-f]{64}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha256sum.  ($SHA256SUM)"; done; }
-		validate_sha384sums() { [[ "${#sha384sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA384SUM && for SHA384SUM in "${sha384sums[@]}"; do { [[ "$SHA384SUM" == "SKIP" ]] || [[ "$SHA384SUM" =~ ^[0-9a-f]{96}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha384sum.  ($SHA384SUM)"; done; }
-		validate_sha512sums() { [[ "${#sha512sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA512SUM && for SHA512SUM in "${sha512sums[@]}"; do { [[ "$SHA512SUM" == "SKIP" ]] || [[ "$SHA512SUM" =~ ^[0-9a-f]{128}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha512sum.  ($SHA512SUM)"; done; }
+		validate_md5sums() { [[ "${#md5sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local MD5SUM && for MD5SUM in "${md5sums[@]}"; do { [[ "$MD5SUM" == "SKIP" ]] || [[ "$MD5SUM" =~ ^[0-9a-f]{32\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed md5sum.  ($MD5SUM)"; done; }
+		validate_sha1sums() { [[ "${#sha1sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA1SUM && for SHA1SUM in "${sha1sums[@]}"; do { [[ "$SHA1SUM" == "SKIP" ]] || [[ "$SHA1SUM" =~ ^[0-9a-f]{40\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha1sum.  ($SHA1SUM)"; done; }
+		validate_sha256sums() { [[ "${#sha256sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA256SUM && for SHA256SUM in "${sha256sums[@]}"; do { [[ "$SHA256SUM" == "SKIP" ]] || [[ "$SHA256SUM" =~ ^[0-9a-f]{64\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha256sum.  ($SHA256SUM)"; done; }
+		validate_sha384sums() { [[ "${#sha384sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA384SUM && for SHA384SUM in "${sha384sums[@]}"; do { [[ "$SHA384SUM" == "SKIP" ]] || [[ "$SHA384SUM" =~ ^[0-9a-f]{96\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha384sum.  ($SHA384SUM)"; done; }
+		validate_sha512sums() { [[ "${#sha512sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA512SUM && for SHA512SUM in "${sha512sums[@]}"; do { [[ "$SHA512SUM" == "SKIP" ]] || [[ "$SHA512SUM" =~ ^[0-9a-f]{128\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha512sum.  ($SHA512SUM)"; done; }
 		validate_archivefiles() { return; }
 		validate_disgustingstrings() { return; } # sudo, || return 1... all that stuff.
 
