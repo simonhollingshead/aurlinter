@@ -39,7 +39,15 @@ do
 
 				[[ -s "$ROSTDOUTLOC" ]] && STDOUT=$(cat "$ROSTDOUTLOC")
 				[[ -s "$ROSTDERRLOC" ]] && STDERR=$(cat "$ROSTDERRLOC")
-				unset -f $(declare -F | cut -d " " -f3)
+
+				for SETFUNCTIONNAME in $(declare -F | cut -d " " -f3)
+				do
+					SETFUNCTIONNAMECLEAN="${SETFUNCTIONNAME//[^A-Za-z0-9_]/_}"
+					declare pkgbuildfunction_"${SETFUNCTIONNAMECLEAN/#[^A-Za-z_]/_}"="$(declare -f $SETFUNCTIONNAME)"
+					unset -f "$SETFUNCTIONNAME"
+				done
+				unset SETFUNCTIONNAME SETFUNCTIONNAMECLEAN
+
 				set | sort > "$ROVMTMPDIR"/setafter-"$RODIRNAME"
 
 				# Minus BASH_COMMAND, BASHPID, BASH_SUBSHELL, COMP_WORDBREAKS, HISTCMD, LINENO, RANDOM, SECONDS.

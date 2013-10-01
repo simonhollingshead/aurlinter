@@ -245,6 +245,7 @@ urlcheck() {
 genreport() {
 	cat <<REPORTHEADER
 Each package was sourced in a container with only base and base-devel, with a read-only working directory and no network connection.  This is intentional, since the act of sourcing should not be writing files, downloading files, or using anything that cannot be checked against the dependency array by makepkg first.
+This may mean that some instances of a message such as 'wrote to stdout' or 'wrote to stderr' are not where the PKGBUILD actively uses a msg-like function, but where it attempts to download or write a file to disk.
 
 REPORTHEADER
 
@@ -302,19 +303,21 @@ REPORTHEADER
 	VALIDOPTIONS=(strip docs libtool staticlibs emptydirs zipman purge upx debug ccache distcc buildflags makeflags)
 	VALIDILICENSES=(AGPL AGPL3 Artistic2.0 CCPL CDDL CPL EPL FDL FDL1.2 FDL1.3 GPL GPL2 GPL3 LGPL LGPL2.1 LGPL3 LPPL MPL PerlArtistic PHP PSF RUBY W3C ZPL zsync BSD MIT Python zlib/libpng)
 	VALIDLICENSES=(Apache APACHE)
+	VALIDPKGEXTS=(tar.gz tar.bz2 tar.xz tar.lrz tar.lzo tar.Z tar)
 	# End of array markers below for iteration assistance.
 	ALLPKGFIELDS=(pkgdesc pkgname pkgrel pkgver url '-') # REQUIRED STRINGS (pkgname is a special case in the event of split packages)
 	ALLPKGFIELDS+=(arch license '--') # REQUIRED ARRAYS
-	ALLPKGFIELDS+=(changelog epoch install pkgbase pkgdir srcdir startdir '---') # OTHER STRINGS
-	ALLPKGFIELDS+=(backup checkdepends conflicts depends groups makedepends md5sums noextract optdepends options provides replaces sha1sums sha256sums sha384sums sha512sums source) # OTHER ARRAYS
+	ALLPKGFIELDS+=(changelog epoch install pkgbase pkgdir srcdir startdir PKGEXT MAKEFLAGS MAKEOPTS DEBUG_CFLAGS DEBUG_CXXFLAGS CARCH LDFLAGS CFLAGS CPPFLAGS CXXFLAGS CHOST STDOUT STDERR '---') # OTHER STRINGS
+	ALLPKGFIELDS+=(backup checkdepends conflicts depends groups makedepends md5sums noextract optdepends options provides replaces sha1sums sha256sums sha384sums sha512sums source DLAGENTS) # OTHER ARRAYS
 	[[ "$VERBOSITY" -ge 3 ]] && BASEANDDEVEL=$(expac -Sg '%n' base base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk '{print $1;}' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' | SHELL=/usr/bin/bash parallel -j8 'echo {}; expac -S1 "%S" {} | sed "s/  /\n/g" | grep -v "\.so$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++')
 	# Regular expressions below with a character count have to be written {number\} otherwise parallel understands it as the {n} option.  \{\} is interpreted as \{} instead.
 	find . -type f | sort | SHELL=/usr/bin/bash parallel -k -N 50 -j8 '
 		inarray() { local insensitive=$1 n=$2 h; shift 2; $insensitive && shopt -s nocasematch; for h; do [[ $n = "$h" ]] || continue; $insensitive && shopt -u nocasematch; return 0; done; shopt -u nocasematch; return 1; }
+		insuffixarray() { local insensitive=$1 n=$2 h; shift 2; $insensitive && shopt -s nocasematch; for h; do [[ $n = *"$h" ]] || continue; $insensitive && shopt -u nocasematch; return 0; done; shopt -u nocasematch; return 1; }
 		validate_pkgname() { [[ "$ROVERBOSITY" -ge 4 ]] && [[ "$pkgname" != "$ROEXTRACTEDDIRNAME" ]] && [[ "$pkgbase" != "$ROEXTRACTEDDIRNAME" ]] && echo "[*] Unzipped directory name and pkgname do not match.  ($ROEXTRACTEDDIRNAME =/= $pkgname)"; }
 		validate_pkgver() { [[ "$pkgrel" =~ [^A-Za-z0-9._] ]] && echo "[*] Disallowed pkgver format.  ($pkgver)"; }
 		validate_pkgrel() { [[ "$ROVERBOSITY" -ge 3 ]] && [[ "$pkgrel" =~ [^0-9] ]] && echo "[*] Non-integer or negative pkgrel.  ($pkgrel)"; }
-		validate_pkgdesc() { [[ "$ROVERBOSITY" -ge 3 ]] && local COMPAREWITH=$(if [[ "$pkgbase" != "" ]]; then echo "$pkgbase"; else echo "$pkgname"; fi); grep -qwf <(echo "$pkgname") <(echo "$COMPAREWITH") && echo "[*] Found package name inside pkgdesc. ($COMPAREWITH)"; { { [[ "$ROVERBOSITY" == 3 ]] && [[ ${#pkgdesc} -gt 150 ]]; } || { [[ "$ROVERBOSITY" == 4 ]] && [[ ${#pkgdesc} -gt 100 ]]; } || { [[ "$ROVERBOSITY" -ge 5 ]] && [[ ${#pkgdesc} -gt 70 ]]; } } && echo "[*] Pkgdesc is excessively long. (${#pkgdesc} chars)"; }
+		validate_pkgdesc() { [[ "$ROVERBOSITY" -ge 3 ]] && local COMPAREWITH=$([[ "$pkgbase" != "" ]] && echo "$pkgbase" || echo "$pkgname") && grep -qwf <(echo "$COMPAREWITH") <(echo "$pkgdesc") && echo "[*] Found package name inside pkgdesc. ($COMPAREWITH)"; { { [[ "$ROVERBOSITY" == 3 ]] && [[ ${#pkgdesc} -gt 150 ]]; } || { [[ "$ROVERBOSITY" == 4 ]] && [[ ${#pkgdesc} -gt 100 ]]; } || { [[ "$ROVERBOSITY" -ge 5 ]] && [[ ${#pkgdesc} -gt 70 ]]; } } && echo "[*] Pkgdesc is excessively long. (${#pkgdesc} chars)"; }
 		validate_url() { grep -qxFf <(echo "$url" | sed "\|://|!d;s|/$||") "../urllist" && echo "[*] Could not connect to address in url field.  ($url)"; }
 		validate_arch() { [[ "$ROVERBOSITY" -ge 2 ]] && local ARCHITECTURENAME && for ARCHITECTURENAME in "${arch[@]}"; do inarray false "$ARCHITECTURENAME" "${ROVALIDARCHES[@]}" || echo "[*] Architecture not recognised.  ($ARCHITECTURENAME)"; done; }
 		validate_license() { [[ "$ROVERBOSITY" -ge 4 ]] && local LICENSENAME && for LICENSENAME in "${license[@]}"; do [[ "$LICENSENAME" == "custom" ]] || { [[ "$LICENSENAME" == "custom:"?* ]] && { ! inarray true "${LICENSENAME#custom:}" "${ROVALIDILICENSES[@]}" && ! inarray false "${LICENSENAME#custom:}" "${ROVALIDLICENSES[@]}"; }; } || inarray true "$LICENSENAME" "${ROVALIDILICENSES[@]}" || inarray false "$LICENSENAME" "${ROVALIDLICENSES[@]}" || echo "[*] Bad license name.  ($LICENSENAME)"; done; }
@@ -337,13 +340,28 @@ REPORTHEADER
 		validate_options() { [[ "$ROVERBOSITY" -ge 3 ]] && local OPTIONNAME && for OPTIONNAME in "${options[@]}"; do { [[ $OPTIONNAME == "" ]] || inarray false "${OPTIONNAME#!}" "${ROVALIDOPTIONS[@]}"; } || echo "[*] Unknown option.  ($OPTIONNAME)"; done; }
 		validate_source() { local COMPARETO=$(IFS=$'"'\n'"'; grep -Fxf <(echo "${source[*]}" | sed "\|://|!d;s/::/\n/;s/^.*\n//;s|/$||") "../urllist"); [[ "$COMPARETO" != "" ]] && echo "[*] Could not connect to the following sources:" && echo "$COMPARETO"; }
 		validate_noextract() { return; }
-		validate_md5sums() { [[ "${#md5sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local MD5SUM && for MD5SUM in "${md5sums[@]}"; do { [[ "$MD5SUM" == "SKIP" ]] || [[ "$MD5SUM" =~ ^[0-9a-f]{32\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed md5sum.  ($MD5SUM)"; done; }
-		validate_sha1sums() { [[ "${#sha1sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA1SUM && for SHA1SUM in "${sha1sums[@]}"; do { [[ "$SHA1SUM" == "SKIP" ]] || [[ "$SHA1SUM" =~ ^[0-9a-f]{40\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha1sum.  ($SHA1SUM)"; done; }
-		validate_sha256sums() { [[ "${#sha256sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA256SUM && for SHA256SUM in "${sha256sums[@]}"; do { [[ "$SHA256SUM" == "SKIP" ]] || [[ "$SHA256SUM" =~ ^[0-9a-f]{64\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha256sum.  ($SHA256SUM)"; done; }
-		validate_sha384sums() { [[ "${#sha384sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA384SUM && for SHA384SUM in "${sha384sums[@]}"; do { [[ "$SHA384SUM" == "SKIP" ]] || [[ "$SHA384SUM" =~ ^[0-9a-f]{96\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha384sum.  ($SHA384SUM)"; done; }
-		validate_sha512sums() { [[ "${#sha512sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA512SUM && for SHA512SUM in "${sha512sums[@]}"; do { [[ "$SHA512SUM" == "SKIP" ]] || [[ "$SHA512SUM" =~ ^[0-9a-f]{128\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "Malformed sha512sum.  ($SHA512SUM)"; done; }
+		validate_md5sums() { [[ "${#md5sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local MD5SUM && for MD5SUM in "${md5sums[@]}"; do { [[ "$MD5SUM" == "SKIP" ]] || [[ "$MD5SUM" =~ ^[0-9a-f]{32\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed md5sum.  ($MD5SUM)"; done; }
+		validate_sha1sums() { [[ "${#sha1sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA1SUM && for SHA1SUM in "${sha1sums[@]}"; do { [[ "$SHA1SUM" == "SKIP" ]] || [[ "$SHA1SUM" =~ ^[0-9a-f]{40\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha1sum.  ($SHA1SUM)"; done; }
+		validate_sha256sums() { [[ "${#sha256sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA256SUM && for SHA256SUM in "${sha256sums[@]}"; do { [[ "$SHA256SUM" == "SKIP" ]] || [[ "$SHA256SUM" =~ ^[0-9a-f]{64\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha256sum.  ($SHA256SUM)"; done; }
+		validate_sha384sums() { [[ "${#sha384sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA384SUM && for SHA384SUM in "${sha384sums[@]}"; do { [[ "$SHA384SUM" == "SKIP" ]] || [[ "$SHA384SUM" =~ ^[0-9a-f]{96\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha384sum.  ($SHA384SUM)"; done; }
+		validate_sha512sums() { [[ "${#sha512sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA512SUM && for SHA512SUM in "${sha512sums[@]}"; do { [[ "$SHA512SUM" == "SKIP" ]] || [[ "$SHA512SUM" =~ ^[0-9a-f]{128\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha512sum.  ($SHA512SUM)"; done; }
+		
+		validate_STDOUT() {  [[ "$ROVERBOSITY" -ge 2 ]] && echo "[*] Wrote to stdout during sourcing:"; echo "$STDOUT"; }
+		validate_STDERR() { echo "[*] Wrote to stderr during sourcing:"; echo "$STDERR"; }
+		validate_PKGEXT() { insuffixarray false "$PKGEXT" "${ROVALIDPKGEXTS[@]}" || echo "[*] Unknown forced PKGEXT value.  ($PKGEXT)"; }
+		validate_CARCH() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Changes CARCH.  ($CARCH)"; }
+		validate_CFLAGS() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set cflags.  ($CFLAGS)"; }
+		validate_CHOST() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Changes CHOST.  ($CHOST)"; }
+		validate_CPPFLAGS() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set cppflags.  ($CPPFLAGS)"; }
+		validate_CXXFLAGS() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set cxxflags.  ($CXXFLAGS)"; }
+		validate_DEBUG_CFLAGS() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set debug cflags.  ($DEBUG_CFLAGS)"; }
+		validate_DEBUG_CXXFLAGS() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set debug cxxflags.  ($DEBUG_CXXFLAGS)"; }
+		validate_LDFLAGS() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set ldflags.  ($LDFLAGS)"; }
+		validate_MAKEFLAGS() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set makeflags.  ($MAKEFLAGS)"; }
+		validate_MAKEOPTS() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set makeopts.  ($MAKEOPTS)"; }
+		validate_DLAGENTS() { return; }
 		validate_archivefiles() { return; }
-		validate_disgustingstrings() { return; } # sudo, || return 1... all that stuff.
+		validate_disgustingstrings() { local FUNCTIONNAME && for FUNCTIONNAME in "${PKGBUILDFUNCTIONS[@]}"; do echo "${!FUNCTIONNAME}" | grep -wq "sudo" && echo "[*] Found using sudo within ${FUNCTIONNAME#pkgbuildfunction_}()."; echo "${!FUNCTIONNAME}" | tr "\n" " "  | grep -Eq "\|\|[[:space:]]*return" && echo "[*] Found using || return within ${FUNCTIONNAME#pkgbuildfunction_}()."; echo "${!FUNCTIONNAME}" | tr "\n" " "  | grep -Eq "[[:space:]](CARCH|CFLAGS|CHOST|CPPFLAGS|CXXFLAGS|DEBUG_CFLAGS|DEBUG_CXXFLAGS|LDFLAGS|MAKEFLAGS|MAKEOPTS)+?=" && echo "[*] Found changing MAKEOPTS within ${FUNCTIONNAME#pkgbuildfunction_}()."; done; }
 
 		INPUT=( {} )
 		for PACKAGE in "${INPUT[@]}"
@@ -359,14 +377,17 @@ REPORTHEADER
 				readonly ROVALIDARCHES=('"${VALIDARCHES[@]}"')
 				readonly ROVALIDILICENSES=('"${VALIDILICENSES[@]}"')
 				readonly ROVALIDLICENSES=('"${VALIDLICENSES[@]}"')
+				readonly ROVALIDPKGEXTS=('"${VALIDPKGEXTS[@]}"')
 				source "$PACKAGE" 2>/dev/null
 				[[ $(expr index "$(declare -p)" $'"'\r'"') != 0 ]] && echo "Aborting: Found line feeds.  Remember, CRLF PKGBUILDs cannot be sourced by makepkg." && exit
 				
 				if [[ "$ROVERBOSITY" -ge 3 ]]; then
+					PKGBUILDFUNCTIONS=()
 					ALLSETVARS=($(sed "/^_/d;s/=.*//" "$PACKAGE"))
 					for SETVARIABLE in "${ALLSETVARS[@]}"
 					do
-						{ inarray false "$SETVARIABLE" "${ROALLPKGFIELDS[@]}" && ! [[ "$SETVARIABLE" =~ "-+" ]]; } || echo "[*] Unknown non-underscored variable $SETVARIABLE set."
+						[[ "$SETVARIABLE" =~ ^pkgbuildfunction_ ]] && PKGBUILDFUNCTIONS+=("$SETVARIABLE") && continue
+						{ ! [[ "$SETVARIABLE" =~ -+ ]] && inarray false "$SETVARIABLE" "${ROALLPKGFIELDS[@]}"; } || echo "[*] Unknown non-underscored variable set with name $SETVARIABLE."
 					done
 				fi
 
@@ -379,17 +400,16 @@ REPORTHEADER
 					$REQUIREDFIELD && [[ "$PKGBUILDFIELD" == "-" ]] && ISSTRING=false && continue
 					$REQUIREDFIELD && [[ "$PKGBUILDFIELD" == "--" ]] && REQUIREDFIELD=false && ISSTRING=true && continue
 					[[ "$PKGBUILDFIELD" == "---" ]] && ISSTRING=false && continue
-
 					VARIABLETYPE=$(declare -p "$PKGBUILDFIELD" 2>/dev/null | cut -d " " -f 2)
 					if [[ "$VARIABLETYPE" != "" ]]; then
 						if $ISSTRING && [[ "$VARIABLETYPE" =~ ^[^Aa]+$ ]]; then
-							$REQUIREDFIELD && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] $PKGBUILDFIELD is not set."
+							$REQUIREDFIELD && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] Essential field $PKGBUILDFIELD has been left blank."
 							validate_$PKGBUILDFIELD
 						elif ! $ISSTRING && [[ "$VARIABLETYPE" == *[Aa]* ]]; then
-							$REQUIREDFIELD && TMPVAR="$PKGBUILDFIELD""[@]" && [[ "${!TMPVAR}" == "" ]] && echo "[*] $PKGBUILDFIELD is not set."
+							$REQUIREDFIELD && TMPVAR="$PKGBUILDFIELD""[@]" && [[ "${!TMPVAR}" == "" ]] && echo "[*] Essential field $PKGBUILDFIELD has been left blank."
 							validate_$PKGBUILDFIELD
 						else
-							$ISSTRING && echo "[*] $PKGBUILDFIELD should be a string but was an array. Skipped." || echo "[*] $PKGBUILDFIELD should be an array but was a string.  Skipped."
+							$ISSTRING && echo "[*] Skipping $PKGBUILDFIELD.  Should be a string but was an array." || echo "[*] Skipping $PKGBUILDFIELD.  Should be an array but was a string."
 						fi
 					fi
 				done
@@ -397,13 +417,13 @@ REPORTHEADER
 				{ [[ "$NUMSUMS" != "${#source[@]}" ]] || [[ "$NUMSUMTYPES" -gt 1 ]]; } && echo "[*] Contains confusing source checksums.  ($NUMSUMS checksums in $NUMSUMTYPES hash formats, ${#source[@]} sources.)"
 
 				validate_archivefiles
-				validate_disgustingstrings
+				[[ "$ROVERBOSITY" -ge 3 ]] && validate_disgustingstrings
 
 				exit 0
 			)
 			[[ $? == 1 ]] && RESULT="Aborting: Could not load data, likely due to use of an associative array."
 			
-			[[ $RESULT != "" ]] && echo "$EXTRACTEDDIRNAME ($APPLICABLEARCHES)" && echo "$RESULT" && echo
+			[[ $RESULT != "" ]] && echo "[o] $EXTRACTEDDIRNAME ($APPLICABLEARCHES)" && echo "$RESULT" && echo
 		done
 	'
 	popd >/dev/null
