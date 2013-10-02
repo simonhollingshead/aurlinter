@@ -59,6 +59,8 @@ do
 				IFS=$'\n'
 				echo "${source[*]}" >> "$VMTMPDIR"/sources-"$ROHOSTNAME"
 				echo "$url" >> "$VMTMPDIR"/urls-"$ROHOSTNAME"
+				echo "${provides[*]}" >> "$VMTMPDIR"/provides-"$ROHOSTNAME"
+				[[ "$pkgbase" != "" ]] && echo "$pkgbase" >> "$VMTMPDIR"/pkgnames-"$ROHOSTNAME" || echo "$pkgname" >> "$VMTMPDIR"/pkgnames-"$ROHOSTNAME"
 			)
 			rm "$VMTMPDIR"/setbefore-"$DIRNAME" "$VMTMPDIR"/setafter-"$DIRNAME" 2>/dev/null
 		done
