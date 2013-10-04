@@ -304,22 +304,17 @@ REPORTHEADER
 	##################################
 	#
 	# .asc and .sig files without SKIP hash.
-	# local files with hashes that don't match
+	# local files with hashes that don't match.
+	#
+	# For bad packages, three extra messages:
+	# - This package is an orphan
+	# - This package is over a year old
+	# - This package has <=5 // >=100 votes
 	#
 	##################################
-	VALIDARCHES=(any x86_64 i686 arm armv6h armv7h) # Order these with most popular first, since inarray ends early in such cases.
-	VALIDOPTIONS=(strip docs libtool staticlibs emptydirs zipman purge upx debug ccache distcc buildflags makeflags)
-	VALIDILICENSES=(AGPL AGPL3 Artistic2.0 CCPL CDDL CPL EPL FDL FDL1.2 FDL1.3 GPL GPL2 GPL3 LGPL LGPL2.1 LGPL3 LPPL MPL PerlArtistic PHP PSF RUBY W3C ZPL zsync BSD MIT Python zlib/libpng)
-	VALIDLICENSES=(Apache APACHE)
-	VALIDPKGEXTS=(tar.gz tar.bz2 tar.xz tar.lrz tar.lzo tar.Z tar)
-	# End of array markers below for iteration assistance.
-	ALLPKGFIELDS=(pkgdesc pkgname pkgrel pkgver url '-') # REQUIRED STRINGS (pkgname is a special case in the event of split packages)
-	ALLPKGFIELDS+=(arch license '--') # REQUIRED ARRAYS
-	ALLPKGFIELDS+=(changelog epoch install pkgbase pkgdir srcdir startdir PKGEXT MAKEFLAGS MAKEOPTS DEBUG_CFLAGS DEBUG_CXXFLAGS CARCH LDFLAGS CFLAGS CPPFLAGS CXXFLAGS CHOST STDOUT STDERR '---') # OTHER STRINGS
-	ALLPKGFIELDS+=(backup checkdepends conflicts depends groups makedepends md5sums noextract optdepends options provides replaces sha1sums sha256sums sha384sums sha512sums source DLAGENTS) # OTHER ARRAYS
 	[[ "$VERBOSITY" -ge 3 ]] && BASEANDDEVEL=$(expac -Sg '%n' base base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk '{print $1;}' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' | SHELL=/usr/bin/bash parallel -j8 'echo {}; expac -S1 "%S" {} | sed "s/  /\n/g" | grep -v "\.so$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' | sort) && NONVERSIONDEPS=$(cat ../provideslist ../pkgnameslist <(expac "%n\n%P" | sed "s|  |\n|g;/^$/d") | grep -v "[=\<\>]" | sort | uniq)
 	# Regular expressions below with a character count have to be written {number\} otherwise parallel understands it as the {n} option.  \{\} is interpreted as \{} instead.
-	find . -type f | sort | SHELL=/usr/bin/bash parallel -k -N 25 -j8 '
+	find . -type f | sort | SHELL=/usr/bin/bash parallel -k -N 50 -j8 '
 		inarray() { local insensitive=$1 n=$2 h; shift 2; $insensitive && shopt -s nocasematch; for h; do [[ $n = "$h" ]] || continue; $insensitive && shopt -u nocasematch; return 0; done; shopt -u nocasematch; return 1; }
 		insuffixarray() { local insensitive=$1 n=$2 h; shift 2; $insensitive && shopt -s nocasematch; for h; do [[ $n = *"$h" ]] || continue; $insensitive && shopt -u nocasematch; return 0; done; shopt -u nocasematch; return 1; }
 		#validate_package() {
@@ -328,7 +323,8 @@ REPORTHEADER
 		#	! VERDEP && grep -qx "$1" <(echo "$ROBASEANDDEVEL") && echo "[*] Depends on $1, which is already installed by base or base-devel." && return
 		#	! VERDEP && ! grep -qx "$1" <(echo "$NONVERSIONDEPS") && echo "[*] Depends on $1, which is already installed by base or base-devel." && return
 		#}
-		validate_pkgname() { [[ "$ROVERBOSITY" -ge 4 ]] && [[ "$pkgname" != "$ROEXTRACTEDDIRNAME" ]] && [[ "$pkgbase" != "$ROEXTRACTEDDIRNAME" ]] && echo "[*] Unzipped directory name and pkgname do not match.  ($ROEXTRACTEDDIRNAME =/= $pkgname)";  [[ "$PKGNAME" =~ [^0-9a-zA-Z@._+-] ]] && echo "[*] Package name contains characters outside the permitted range.  ($pkgname)"; }
+		validate_vcs_suffix() { local SOURCEENTRY PREFIX=false FRAGMENT=true RETURNMSG="" VCSTYPE="${pkgname##*-}"; inarray false "$VCSTYPE" "${!ROVCSTYPES[@]}" || return; inarray false "${ROVCSTYPES[$VCSTYPE]}" "${makedepends[@]}" || RETURNMSG="$RETURNMSG  Failed to declare makedepend on ${ROVCSTYPES[$VCSTYPE]}."; for SOURCEENTRY in "${source[@]}"; do { [[ "$SOURCEENTRY" == "$VCSTYPE://"* ]] || [[ "$SOURCEENTRY" == "$VCSTYPE+"* ]]; } && PREFIX=true && { [[ "${SOURCEENTRY##*#}" == "$SOURCEENTRY" ]] || [[ "${SOURCEENTRY##*#}" != "revision="* ]]; } && FRAGMENT=false; ! $FRAGMENT && $PREFIX && break; done; $PREFIX && RETURNMSG="$RETURNMSG  No VCS source array entry found."; $PREFIX && $FRAGMENT && RETURNMSG="$RETURNMSG  Only VCS sources found specified a revision rather than tracking the repository."; [[ "$RETURNMSG" != "" ]] && echo "[*] Bad VCS package:$RETURNMSG"; }
+		validate_pkgname() { [[ "$ROVERBOSITY" -ge 4 ]] && [[ "$pkgname" != "$ROEXTRACTEDDIRNAME" ]] && [[ "$pkgbase" != "$ROEXTRACTEDDIRNAME" ]] && echo "[*] Unzipped directory name and pkgname do not match.  ($ROEXTRACTEDDIRNAME =/= $pkgname)"; [[ "$PKGNAME" =~ [^0-9a-zA-Z@._+-] ]] && echo "[*] Package name contains characters outside the permitted range.  ($pkgname)"; validate_vcs_suffix; }
 		validate_pkgver() { [[ "$pkgrel" =~ [^A-Za-z0-9._] ]] && echo "[*] Disallowed pkgver format.  ($pkgver)"; }
 		validate_pkgrel() { [[ "$ROVERBOSITY" -ge 3 ]] && [[ "$pkgrel" =~ [^0-9] ]] && echo "[*] Non-integer or negative pkgrel.  ($pkgrel)"; }
 		validate_pkgdesc() { [[ "$ROVERBOSITY" -ge 3 ]] && local COMPAREWITH=$([[ "$pkgbase" != "" ]] && echo "$pkgbase" || echo "$pkgname") && grep -qwf <(echo "$COMPAREWITH") <(echo "$pkgdesc") && echo "[*] Found package name inside pkgdesc. ($COMPAREWITH)"; { { [[ "$ROVERBOSITY" == 3 ]] && [[ ${#pkgdesc} -gt 150 ]]; } || { [[ "$ROVERBOSITY" == 4 ]] && [[ ${#pkgdesc} -gt 100 ]]; } || { [[ "$ROVERBOSITY" -ge 5 ]] && [[ ${#pkgdesc} -gt 70 ]]; } } && echo "[*] Pkgdesc is excessively long. (${#pkgdesc} chars)"; }
@@ -373,7 +369,9 @@ REPORTHEADER
 		validate_LDFLAGS() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set ldflags.  ($LDFLAGS)"; }
 		validate_MAKEFLAGS() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set makeflags.  ($MAKEFLAGS)"; }
 		validate_MAKEOPTS() { [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set makeopts.  ($MAKEOPTS)"; }
-		validate_DLAGENTS() { echo "[d]${DLAGENTS[*]}"; }
+		validate_DLAGENTS() { local DLAGENT && for DLAGENT in "${DLAGENTS[@]}"; do DLAGENT="${DLAGENT%%::*}"; inarray false "$DLAGENT" "${RODEFAULTDLAGENTS[@]}" && echo "[*] Redefines default DLAGENT for $DLAGENT." || { [[ "$ROVERBOSITY" -ge 5 ]] && echo "[*] Defines DLAGENT for $DLAGENT"; }; done; }
+		
+
 		validate_archivefiles() { return; }
 		validate_disgustingstrings() { local FUNCTIONNAME && for FUNCTIONNAME in "${PKGBUILDFUNCTIONS[@]}"; do echo "${!FUNCTIONNAME}" | grep -wq "sudo" && echo "[*] Found using sudo within ${FUNCTIONNAME#pkgbuildfunction_}()."; echo "${!FUNCTIONNAME}" | tr "\n" " "  | grep -Eq "\|\|[[:space:]]*return" && echo "[*] Found using || return within ${FUNCTIONNAME#pkgbuildfunction_}()."; echo "${!FUNCTIONNAME}" | tr "\n" " "  | grep -Eq "[[:space:]](CARCH|CFLAGS|CHOST|CPPFLAGS|CXXFLAGS|DEBUG_CFLAGS|DEBUG_CXXFLAGS|LDFLAGS|MAKEFLAGS|MAKEOPTS)+?=" && echo "[*] Found changing MAKEOPTS within ${FUNCTIONNAME#pkgbuildfunction_}()."; done; }
 		validate_package_function() { declare -p pkgbuildfunction_package >/dev/null 2>&1 || echo "[*] PKGBUILD has no package() function."; }
@@ -385,14 +383,22 @@ REPORTHEADER
 			APPLICABLEARCHES="${EXTRACTEDDIRNAME##*-}"
 			EXTRACTEDDIRNAME="${EXTRACTEDDIRNAME%-*}"
 			RESULT=$(
+				readonly ROVALIDARCHES=(any x86_64 i686 arm armv6h armv7h) # Order these with most popular first, since inarray ends early in such cases.
+				readonly ROVALIDOPTIONS=(strip docs libtool staticlibs emptydirs zipman purge upx debug ccache distcc buildflags makeflags)
+				readonly ROVALIDILICENSES=(AGPL AGPL3 Artistic2.0 CCPL CDDL CPL EPL FDL FDL1.2 FDL1.3 GPL GPL2 GPL3 LGPL LGPL2.1 LGPL3 LPPL MPL PerlArtistic PHP PSF RUBY W3C ZPL zsync BSD MIT Python zlib/libpng)
+				readonly ROVALIDLICENSES=(Apache APACHE)
+				readonly ROVALIDPKGEXTS=(tar.gz tar.bz2 tar.xz tar.lrz tar.lzo tar.Z tar)
+				readonly RODEFAULTDLAGENTS=(http https ftp rsync scp)
+				declare -Ar ROVCSTYPES=([svn]=subversion [bzr]=bzr [git]=git [hg]=mercurial)
+				# End of array markers below for iteration assistance.
+				ROALLPKGFIELDS=(pkgdesc pkgname pkgrel pkgver url -) # REQUIRED STRINGS
+				ROALLPKGFIELDS+=(arch license --) # REQUIRED ARRAYS
+				ROALLPKGFIELDS+=(changelog epoch install pkgbase pkgdir srcdir startdir PKGEXT MAKEFLAGS MAKEOPTS DEBUG_CFLAGS DEBUG_CXXFLAGS CARCH LDFLAGS CFLAGS CPPFLAGS CXXFLAGS CHOST STDOUT STDERR ---) # OTHER STRINGS
+				ROALLPKGFIELDS+=(backup checkdepends conflicts depends groups makedepends md5sums noextract optdepends options provides replaces sha1sums sha256sums sha384sums sha512sums source DLAGENTS) # OTHER ARRAYS
+				readonly ROALLPKGFIELDS
+
 				readonly ROEXTRACTEDDIRNAME="$EXTRACTEDDIRNAME"
 				readonly ROVERBOSITY="'"$VERBOSITY"'"
-				readonly ROALLPKGFIELDS=('"${ALLPKGFIELDS[@]}"')
-				readonly ROVALIDOPTIONS=('"${VALIDOPTIONS[@]}"')
-				readonly ROVALIDARCHES=('"${VALIDARCHES[@]}"')
-				readonly ROVALIDILICENSES=('"${VALIDILICENSES[@]}"')
-				readonly ROVALIDLICENSES=('"${VALIDLICENSES[@]}"')
-				readonly ROVALIDPKGEXTS=('"${VALIDPKGEXTS[@]}"')
 				readonly ROBASEANDDEVEL="$BASEANDDEVEL"
 				readonly RONONVERSIONDEPS="$NONVERSIONDEPS"
 
