@@ -335,7 +335,7 @@ REPORTHEADER
 		validate_srcdir() { [[ "$srcdir" != "" ]] && echo "[*] Sets srcdir.  (To $srcdir)"; }
 		validate_startdir() { [[ "$startdir" != "" ]] && echo "[*] Sets startdir.  (To $startdir)"; }
 		validate_epoch() { [[ "$ROVERBOSITY" -ge 3 ]] && [[ "$epoch" =~ [^0-9] ]] && echo "[*] Non-integer or negative epoch.  ($epoch)"; }
-		validate_pkgbase() { return; }
+		validate_pkgbase() { [[ "$ROVERBOSITY" -ge 3 ]] && [[ "$pkgbase" == "-"* ]] && echo "[*] The pkgbase may not begin with a hyphen."; }
 		validate_groups() { [[ "$ROVERBOSITY" -ge 5 ]] && [[ $(IFS=""; echo "${groups}[@]") != "" ]] && echo "[*] AUR packages gain no benefit from having a defined group."; }
 		validate_install() { [[ $install != "" ]] && [ ! -f "../../prep/ext/$ROEXTRACTEDDIRNAME/$install" ] && echo "[*] Install file not found in archive.  ($install)"; }
 		validate_changelog() { [[ "$changelog" != "" ]] && [ ! -f "../../prep/ext/$ROEXTRACTEDDIRNAME/$changelog" ] && "[*] Changelog file not found in archive.  ($changelog)"; }
@@ -346,10 +346,10 @@ REPORTHEADER
 		validate_provides() { local PROVIDEDPACKAGE VERDEP=false COMPAREWITH=$([[ "$pkgbase" != "" ]] && echo "$pkgbase" || echo "$pkgname") && for PROVIDEDPACKAGE in "${provides[@]}"; do [[ "$PROVIDEDPACKAGE" =~ ^[0-9a-zA-Z@._+-]+(=[0-9a-zA-Z._]+)?$ ]] || { echo "[*] Invalid provides declaration ($PROVIDEDPACKAGE)" && continue; }; [[ "$ROVERBOSITY" -ge 3 ]] && [[ "${PROVIDEDPACKAGE%%=*}" == "$COMPAREWITH" ]] && echo "[*] Package provides itself."; done; }
 		validate_conflicts() { return; }
 		validate_replaces() { return; }
-		validate_backup() { return; }
+		validate_backup() { [[ "$ROVERBOSITY" -ge 3 ]] && { local BACKUPFILE ABSOLUTE=false && for BACKUPFILE in "${backup[@]}"; do [[ "$BACKUPFILE" == "/"* ]] && ABSOLUTE=true; [[ "$ROVERBOSITY" -ge 5 ]] && [[ "${BACKUPFILE#/}" != "etc/"* ]] && [[ ! "${BACKUPFILE##*/}" =~ (cfg|conf) ]] && echo "[*] Potentially unneeded backup of $BACKUPFILE"; done; $ABSOLUTE && echo "[*] Absolute filepaths found in backup array."; }; }
 		validate_options() { [[ "$ROVERBOSITY" -ge 3 ]] && local OPTIONNAME && for OPTIONNAME in "${options[@]}"; do { [[ $OPTIONNAME == "" ]] || inarray false "${OPTIONNAME#!}" "${ROVALIDOPTIONS[@]}"; } || echo "[*] Unknown option.  ($OPTIONNAME)"; done; }
 		validate_source() { local SOURCEPATH URLLIST=() LOCALLIST=() COMPARETO && for SOURCEPATH in "${source[@]}"; do [[ $(expr index "$SOURCEPATH" "://") != 0 ]] && URLLIST+=("$SOURCEPATH") && continue; [[ ! -f "../../prep/ext/$ROEXTRACTEDDIRNAME/$SOURCEPATH" ]] && echo "[*] Source entry $SOURCEPATH not found in the archive."; done; COMPARETO=$(IFS=$'"'\n'"'; grep -Fxf <(echo "${URLLIST[*]}" | sed "s|::|\n|;s|^.*\n||;s|/$||") "../urllist"); [[ "$COMPARETO" != "" ]] && echo "[*] Could not connect to the following sources:" && echo "$COMPARETO"; }
-		validate_noextract() { [[ "$ROVERBOSITY" -ge 3 ]] && local NOEXTRACTFILE SOURCEFILE FOUND && for NOEXTRACTFILE in ${noextract[@]}; do FOUND=false; for SOURCEFILE in "${source[@]}"; do SOURCEFILE="${SOURCEFILE%%::*}"; SOURCEFILE="${SOURCEFILE##*/}"; [[ "$SOURCEFILE" == "$NOEXTRACTFILE" ]] && FOUND=true && break; done; $FOUND || echo "[*] Told not to extract a file, $NOEXTRACTFILE, that was not found in the source array."; done; }
+		validate_noextract() { [[ "$ROVERBOSITY" -ge 3 ]] && local NOEXTRACTFILE SOURCEFILE FOUND && for NOEXTRACTFILE in "${noextract[@]}"; do FOUND=false; for SOURCEFILE in "${source[@]}"; do SOURCEFILE="${SOURCEFILE%%::*}"; SOURCEFILE="${SOURCEFILE##*/}"; [[ "$SOURCEFILE" == "$NOEXTRACTFILE" ]] && FOUND=true && break; done; $FOUND || echo "[*] Told not to extract a file, $NOEXTRACTFILE, that was not found in the source array."; done; }
 		validate_md5sums() { [[ "${#md5sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local MD5SUM && for MD5SUM in "${md5sums[@]}"; do { [[ "$MD5SUM" == "SKIP" ]] || [[ "$MD5SUM" =~ ^[0-9a-f]{32\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed md5sum.  ($MD5SUM)"; done; }
 		validate_sha1sums() { [[ "${#sha1sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA1SUM && for SHA1SUM in "${sha1sums[@]}"; do { [[ "$SHA1SUM" == "SKIP" ]] || [[ "$SHA1SUM" =~ ^[0-9a-f]{40\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha1sum.  ($SHA1SUM)"; done; }
 		validate_sha256sums() { [[ "${#sha256sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA256SUM && for SHA256SUM in "${sha256sums[@]}"; do { [[ "$SHA256SUM" == "SKIP" ]] || [[ "$SHA256SUM" =~ ^[0-9a-f]{64\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha256sum.  ($SHA256SUM)"; done; }
@@ -454,7 +454,7 @@ REPORTHEADER
 	popd >/dev/null
 }
 
-VERBOSITY=1
+VERBOSITY=0
 while getopts "v" OPTION; do
 	case "$OPTION" in
 		v)
@@ -462,6 +462,7 @@ while getopts "v" OPTION; do
 			;;
 	esac	
 done
+[[ "$VERBOSITY" == "0" ]] && VERBOSITY=1
 
 # prep
 # coalesce
