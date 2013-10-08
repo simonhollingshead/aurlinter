@@ -326,16 +326,16 @@ REPORTHEADER
 		inarray() { local insensitive=$1 n=$2 h; shift 2; $insensitive && shopt -s nocasematch; for h; do [[ $n = "$h" ]] || continue; $insensitive && shopt -u nocasematch; return 0; done; shopt -u nocasematch; return 1; }
 		insuffixarray() { local insensitive=$1 n=$2 h; shift 2; $insensitive && shopt -s nocasematch; for h; do [[ $n = *"$h" ]] || continue; $insensitive && shopt -u nocasematch; return 0; done; shopt -u nocasematch; return 1; }
 		
-		dep_wellformatted() { $1 && [[ "$2" =~ ^[0-9a-zA-Z@._+][0-9a-zA-Z@._+-]*((\>|\<|<=|>=|=)?[0-9a-zA-Z.]+(-[0-9]+)?)?$ ]] && return 0; ! $1 && [[ "$2" =~ ^[0-9a-zA-Z@._+][0-9a-zA-Z@._+-]*$ ]] && return 0; echo "[*] Bad dependency.  ($2)" && return 1; }
+		dep_wellformatted() { $1 && [[ "$2" =~ ^[0-9a-zA-Z@._+][0-9a-zA-Z@._+-]*((\>|\<|\<=|\>=|=)?[0-9a-zA-Z.]+(-[0-9]+)?)?$ ]] && return 0; ! $1 && [[ "$2" =~ ^[0-9a-zA-Z@._+][0-9a-zA-Z@._+-]*$ ]] && return 0; local TYPE=$($1 && echo "dependency" || echo "unversioned package reference"); echo "[*] Bad $TYPE.  ($2)" && return 1; }
 		dep_canbesatisfied() { local OK=false REQDVERSION="${1##*[=><]}"; if [[ "$REQDVERSION" != "$1" ]]; then local PACKAGENAME="${1%%[=><]*}"; grep -ql "^$PACKAGENAME$" ../splitpkgslist && break; local ALLPKGS=$(grep -h "^$PACKAGENAME=" ../tmp_allpkgnames ../pkgslist); while read line; do local VERCMP=$(vercmp "$REQDVERSION" "${line##*=}"); { { [[ "$VERCMP" == 1 ]] && [[ "$1" == *"<"* ]]; } || { [[ "$VERCMP" == 0 ]] && [[ "$1" == *"="* ]]; } || { [[ "$VERCMP" == -1 ]] && [[ "$1" == *">"* ]]; }; } && OK=true && break; done <<< "$ALLPKGS"; $OK || echo "[*] Could not find any package that provided $1."; else grep -ql "^$1$\|^$1=" ../tmp_allpkgnames ../pkgslist ../splitpkgslist || echo "[*] Could not find any package that provided $1."; fi; }
-		dep_notinbasedevel() { local PACKAGENAME="${1%%[=><]*}" REQDVERSION="${1##*[=><]}"; [[ "$REQDVERSION" == "$1" ]] && grep -ql "^$PACKAGENAME$\|^$PACKAGENAME=" ../tmp_basedevel && echo "[*] $1 is installed by base-devel already." && return; [[ "$REQDVERSION" != "$1" ]] && local VERCMP; grep "^$PACKAGENAME=" ../tmp_basedevel | sed "s/*=//" | while read line; do VERCMP=$(vercmp "$REQDVERSION" "${line##*=}"); { { [[ "$VERCMP" == 1 ]] && [[ "$1" == *"<"* ]]; } || { [[ "$VERCMP" == 0 ]] && [[ "$1" == *"="* ]]; } || { [[ "$VERCMP" == -1 ]] && [[ "$1" == *">"* ]]; }; } && echo "[*] Packages from base-devel already satisfy $1." && break; done; }
+		dep_notinbasedevel() { local PACKAGENAME="${1%%[=><]*}" REQDVERSION="${1##*[=><]}"; [[ "$REQDVERSION" == "$1" ]] && grep -ql "^$PACKAGENAME$\|^$PACKAGENAME=" ../tmp_basedevel && { ! [[ "$ROVERBOSITY" -gt 2 ]] || echo "[*] Base-devel already contains $1."; } && return; [[ "$REQDVERSION" != "$1" ]] && local VERCMP; grep "^$PACKAGENAME=" ../tmp_basedevel | sed "s/*=//" | while read line; do VERCMP=$(vercmp "$REQDVERSION" "${line##*=}"); { { [[ "$VERCMP" == 1 ]] && [[ "$1" == *"<"* ]]; } || { [[ "$VERCMP" == 0 ]] && [[ "$1" == *"="* ]]; } || { [[ "$VERCMP" == -1 ]] && [[ "$1" == *">"* ]]; }; } && { ! [[ "$ROVERBOSITY" -gt 2 ]] || echo "[*] Packages from base-devel already satisfy $1."; } && break; done; }
 		dep_nottoolong() { local DESC="${1#*:}"; [[ "$DESC" != "$1" ]] && [[ "${#DESC}" -gt 150 ]] && echo "[*] Optional dependency description excessively long:" && echo "$1"; }
 
-		validate_vcs_suffix() { local SOURCEENTRY PREFIX=false FRAGMENT=true RETURNMSG="" VCSTYPE="${pkgname##*-}"; inarray false "$VCSTYPE" "${!ROVCSTYPES[@]}" || return; inarray false "${ROVCSTYPES[$VCSTYPE]}" "${makedepends[@]}" || RETURNMSG="$RETURNMSG  Failed to declare makedepend on ${ROVCSTYPES[$VCSTYPE]}."; for SOURCEENTRY in "${source[@]}"; do { [[ "$SOURCEENTRY" == "$VCSTYPE://"* ]] || [[ "$SOURCEENTRY" == "$VCSTYPE+"* ]]; } && PREFIX=true && { [[ "${SOURCEENTRY##*#}" == "$SOURCEENTRY" ]] || [[ "${SOURCEENTRY##*#}" != "revision="* ]]; } && FRAGMENT=false; ! $FRAGMENT && $PREFIX && break; done; $PREFIX && RETURNMSG="$RETURNMSG  No VCS source array entry found."; $PREFIX && $FRAGMENT && RETURNMSG="$RETURNMSG  Only VCS sources found specified a revision rather than tracking the repository."; [[ "$RETURNMSG" != "" ]] && echo "[*] Bad VCS package:$RETURNMSG"; }
-		validate_pkgname() { [[ "$ROVERBOSITY" -ge 4 ]] && [[ "$pkgname" != "$ROEXTRACTEDDIRNAME" ]] && [[ "$pkgbase" != "$ROEXTRACTEDDIRNAME" ]] && echo "[*] Unzipped directory name and pkgname do not match.  ($ROEXTRACTEDDIRNAME =/= $pkgname)"; [[ "$pkgname" =~ ^[0-9a-zA-Z@._+][0-9a-zA-Z@._+-]*$ ]] || echo "[*] Package name contains characters outside the permitted range.  ($pkgname)"; validate_vcs_suffix; }
+		validate_vcs_suffix() { local SOURCEENTRY PREFIX=false FRAGMENT=true RETURNMSG="" VCSTYPE="${1##*-}"; inarray false "$VCSTYPE" "${!ROVCSTYPES[@]}" || return; inarray false "${ROVCSTYPES[$VCSTYPE]}" "${makedepends[@]}" || RETURNMSG="$RETURNMSG  Failed to declare makedepend on ${ROVCSTYPES[$VCSTYPE]}."; for SOURCEENTRY in "${source[@]}"; do { [[ "$SOURCEENTRY" == "$VCSTYPE://"* ]] || [[ "$SOURCEENTRY" == "$VCSTYPE+"* ]]; } && PREFIX=true && { [[ "${SOURCEENTRY##*#}" == "$SOURCEENTRY" ]] || [[ "${SOURCEENTRY##*#}" != "revision="* ]]; } && FRAGMENT=false; ! $FRAGMENT && $PREFIX && break; done; ! $PREFIX && RETURNMSG="$RETURNMSG  No VCS source array entry found."; $PREFIX && $FRAGMENT && RETURNMSG="$RETURNMSG  Only VCS sources found specified a revision rather than tracking the repository."; [[ "$RETURNMSG" != "" ]] && echo "[*] Bad VCS package:$RETURNMSG"; }
+		validate_pkgname() { [[ "$ROVERBOSITY" -ge 4 ]] && [[ "$PKGBUILDIDENTIFIER" != "$ROEXTRACTEDDIRNAME" ]] && echo "[*] Unzipped directory name and package name do not match.  ($ROEXTRACTEDDIRNAME =/= $PKGBUILDIDENTIFIER)"; local NAME && for NAME in "${pkgname[@]}" "${pkgbase[@]}"; do [[ "$NAME" =~ ^[0-9a-zA-Z@._+][0-9a-zA-Z@._+-]*$ ]] || echo "[*] Package name contains characters outside the permitted range.  ($NAME)"; validate_vcs_suffix "$NAME"; done; }
 		validate_pkgver() { [[ "$pkgrel" =~ [^A-Za-z0-9._] ]] && echo "[*] Disallowed pkgver format.  ($pkgver)"; }
 		validate_pkgrel() { [[ "$ROVERBOSITY" -ge 3 ]] && [[ "$pkgrel" =~ [^0-9] ]] && echo "[*] Non-integer or negative pkgrel.  ($pkgrel)"; }
-		validate_pkgdesc() { [[ "$ROVERBOSITY" -ge 3 ]] && local COMPAREWITH=$([[ "$pkgbase" != "" ]] && echo "$pkgbase" || echo "$pkgname") && grep -qwf <(echo "$COMPAREWITH") <(echo "$pkgdesc") && echo "[*] Found package name inside pkgdesc. ($COMPAREWITH)"; { { [[ "$ROVERBOSITY" == 3 ]] && [[ ${#pkgdesc} -gt 150 ]]; } || { [[ "$ROVERBOSITY" == 4 ]] && [[ ${#pkgdesc} -gt 100 ]]; } || { [[ "$ROVERBOSITY" -ge 5 ]] && [[ ${#pkgdesc} -gt 70 ]]; } } && echo "[*] Pkgdesc is excessively long. (${#pkgdesc} chars)"; }
+		validate_pkgdesc() { [[ "$ROVERBOSITY" -ge 3 ]] && grep -qwf <(echo "$PKGBUILDIDENTIFIER") <(echo "$pkgdesc") && echo "[*] Found package name inside pkgdesc. ($PKGBUILDIDENTIFIER)"; { { [[ "$ROVERBOSITY" == 3 ]] && [[ ${#pkgdesc} -gt 150 ]]; } || { [[ "$ROVERBOSITY" == 4 ]] && [[ ${#pkgdesc} -gt 100 ]]; } || { [[ "$ROVERBOSITY" -ge 5 ]] && [[ ${#pkgdesc} -gt 70 ]]; } } && echo "[*] Pkgdesc is excessively long. (${#pkgdesc} chars)"; }
 		validate_url() { grep -qxFf <(echo "$url" | sed "\|://|!d;s|/$||") "../urllist" && echo "[*] Could not connect to address in url field.  ($url)"; }
 		validate_arch() { [[ "$ROVERBOSITY" -ge 2 ]] && local ARCHITECTURENAME && for ARCHITECTURENAME in "${arch[@]}"; do inarray false "$ARCHITECTURENAME" "${ROVALIDARCHES[@]}" || echo "[*] Architecture not recognised.  ($ARCHITECTURENAME)"; done; }
 		validate_license() { [[ "$ROVERBOSITY" -ge 4 ]] && local LICENSENAME && for LICENSENAME in "${license[@]}"; do [[ "$LICENSENAME" == "custom" ]] || { [[ "$LICENSENAME" == "custom:"?* ]] && { ! inarray true "${LICENSENAME#custom:}" "${ROVALIDILICENSES[@]}" && ! inarray false "${LICENSENAME#custom:}" "${ROVALIDLICENSES[@]}"; }; } || inarray true "$LICENSENAME" "${ROVALIDILICENSES[@]}" || inarray false "$LICENSENAME" "${ROVALIDLICENSES[@]}" || echo "[*] Bad license name.  ($LICENSENAME)"; done; }
@@ -343,7 +343,7 @@ REPORTHEADER
 		validate_srcdir() { [[ "$srcdir" != "" ]] && echo "[*] Sets srcdir.  (To $srcdir)"; }
 		validate_startdir() { [[ "$startdir" != "" ]] && echo "[*] Sets startdir.  (To $startdir)"; }
 		validate_epoch() { [[ "$ROVERBOSITY" -ge 3 ]] && [[ "$epoch" =~ [^0-9] ]] && echo "[*] Non-integer or negative epoch.  ($epoch)"; }
-		validate_pkgbase() { [[ "$ROVERBOSITY" -ge 3 ]] && [[ "$pkgbase" == "-"* ]] && echo "[*] The pkgbase may not begin with a hyphen."; }
+		validate_pkgbase() { return; } # Handled by pkgname where needed.
 		validate_groups() { [[ "$ROVERBOSITY" -ge 5 ]] && [[ $(IFS=""; echo "${groups}[@]") != "" ]] && echo "[*] AUR packages gain no benefit from having a defined group."; }
 		validate_install() { [[ $install != "" ]] && [ ! -f "../../prep/ext/$ROEXTRACTEDDIRNAME/$install" ] && echo "[*] Install file not found in archive.  ($install)"; }
 		validate_changelog() { [[ "$changelog" != "" ]] && [ ! -f "../../prep/ext/$ROEXTRACTEDDIRNAME/$changelog" ] && "[*] Changelog file not found in archive.  ($changelog)"; }
@@ -354,7 +354,7 @@ REPORTHEADER
 		validate_optdepends() { local DEPENDENCYLINE && for DEPENDENCYLINE in "${optdepends[@]}"; do dep_wellformatted false "${DEPENDENCYLINE%%:*}" && dep_notinbasedevel "${DEPENDENCYLINE%%:*}" && dep_canbesatisfied "${DEPENDENCYLINE%%:*}" && [[ "$ROVERBOSITY" -ge 5 ]] && dep_nottoolong "$DEPENDENCYLINE"; done; }
 		validate_conflicts() { local DEPENDENCYLINE && for DEPENDENCYLINE in "${conflicts[@]}"; do dep_wellformatted false "$DEPENDENCYLINE" && dep_canbesatisfied "$DEPENDENCYLINE"; done; }
 		validate_replaces() { local DEPENDENCYLINE && for DEPENDENCYLINE in "${replaces[@]}"; do dep_wellformatted false "$DEPENDENCYLINE"; done; }
-		validate_provides() { local PROVIDEDPACKAGE COMPAREWITH=$([[ "$pkgbase" != "" ]] && echo "$pkgbase" || echo "$pkgname") && for PROVIDEDPACKAGE in "${provides[@]}"; do [[ "$PROVIDEDPACKAGE" =~ ^[0-9a-zA-Z@._+-]+(=[0-9a-zA-Z._]+)?$ ]] || { echo "[*] Invalid provides declaration ($PROVIDEDPACKAGE)" && continue; }; [[ "$ROVERBOSITY" -ge 3 ]] && [[ "${PROVIDEDPACKAGE%%=*}" == "$COMPAREWITH" ]] && echo "[*] Package provides itself."; done; }
+		validate_provides() { local PROVIDEDPACKAGE && for PROVIDEDPACKAGE in "${provides[@]}"; do [[ "$PROVIDEDPACKAGE" =~ ^[0-9a-zA-Z@._+-]+(=[0-9a-zA-Z._]+)?$ ]] || { echo "[*] Invalid provides declaration ($PROVIDEDPACKAGE)" && continue; }; [[ "$ROVERBOSITY" -ge 3 ]] && [[ "${PROVIDEDPACKAGE%%=*}" == "$PKGBUILDIDENTIFIER" ]] && echo "[*] Package provides itself."; done; }
 		
 		validate_backup() { [[ "$ROVERBOSITY" -ge 3 ]] && { local BACKUPFILE ABSOLUTE=false && for BACKUPFILE in "${backup[@]}"; do [[ "$BACKUPFILE" == "/"* ]] && ABSOLUTE=true; [[ "$ROVERBOSITY" -ge 5 ]] && [[ "${BACKUPFILE#/}" != "etc/"* ]] && [[ ! "${BACKUPFILE##*/}" =~ (cfg|conf) ]] && echo "[*] Potentially unneeded backup of $BACKUPFILE"; done; $ABSOLUTE && echo "[*] Absolute filepaths found in backup array."; }; }
 		validate_options() { [[ "$ROVERBOSITY" -ge 3 ]] && local OPTIONNAME && for OPTIONNAME in "${options[@]}"; do { [[ $OPTIONNAME == "" ]] || inarray false "${OPTIONNAME#!}" "${ROVALIDOPTIONS[@]}"; } || echo "[*] Unknown option.  ($OPTIONNAME)"; done; }
@@ -401,7 +401,8 @@ REPORTHEADER
 				readonly RODEFAULTDLAGENTS=(http https ftp rsync scp)
 				declare -Ar ROVCSTYPES=([svn]=subversion [bzr]=bzr [git]=git [hg]=mercurial)
 				# End of array markers below for iteration assistance.
-				ROALLPKGFIELDS=(pkgdesc pkgname pkgrel pkgver url -) # REQUIRED STRINGS
+				ROALLPKGFIELDS=(pkgname) # Special case.  Required string-or-array.
+				ROALLPKGFIELDS+=(pkgdesc pkgrel pkgver url -) # REQUIRED STRINGS
 				ROALLPKGFIELDS+=(arch license --) # REQUIRED ARRAYS
 				ROALLPKGFIELDS+=(changelog epoch install pkgbase pkgdir srcdir startdir PKGEXT MAKEFLAGS MAKEOPTS DEBUG_CFLAGS DEBUG_CXXFLAGS CARCH LDFLAGS CFLAGS CPPFLAGS CXXFLAGS CHOST STDOUT STDERR ---) # OTHER STRINGS
 				ROALLPKGFIELDS+=(backup checkdepends conflicts depends groups makedepends md5sums noextract optdepends options provides replaces sha1sums sha256sums sha384sums sha512sums source DLAGENTS) # OTHER ARRAYS
@@ -423,6 +424,7 @@ REPORTHEADER
 					done
 				fi
 
+				PKGBUILDIDENTIFIER=$({ [[ "${#pkgname[*]}" -gt 1 ]] && [[ "$pkgbase" != "" ]] && echo $pkgbase; } || echo "$pkgname")
 				REQUIREDFIELD=true
 				ISSTRING=true
 				NUMSUMS=0
@@ -434,7 +436,11 @@ REPORTHEADER
 					[[ "$PKGBUILDFIELD" == "---" ]] && ISSTRING=false && continue
 					VARIABLETYPE=$(declare -p "$PKGBUILDFIELD" 2>/dev/null | cut -d " " -f 2)
 					if [[ "$VARIABLETYPE" != "" ]]; then
-						if $ISSTRING && [[ "$VARIABLETYPE" =~ ^[^Aa]+$ ]]; then
+						if [[ "$PKGBUILDFIELD" == "pkgname" ]]; then
+							# Special case, can be both.
+							[[ "${pkgname[*]}" =~ ^[\ ]*$ ]] && echo "[*] Essential field $PKGBUILDFIELD has been left blank."
+							validate_pkgname
+						elif $ISSTRING && [[ "$VARIABLETYPE" =~ ^[^Aa]+$ ]]; then
 							$REQUIREDFIELD && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] Essential field $PKGBUILDFIELD has been left blank."
 							validate_$PKGBUILDFIELD
 						elif ! $ISSTRING && [[ "$VARIABLETYPE" == *[Aa]* ]]; then
@@ -446,7 +452,8 @@ REPORTHEADER
 					fi
 				done
 
-				{ [[ "$NUMSUMS" != "${#source[@]}" ]] || [[ "$NUMSUMTYPES" -gt 1 ]]; } && echo "[*] Contains confusing source checksums.  ($NUMSUMS checksums in $NUMSUMTYPES hash formats, ${#source[@]} sources.)"
+				[[ "$NUMSUMS" != "${#source[@]}" ]] && echo "[*] Number of hashes ($NUMSUMS) does not match number of entries in the source array (${#source[@]})."
+				[[ "$NUMSUMTYPES" -gt 1 ]] && echo "[*] More than one type of hash is used to describe the source array ($NUMSUMTYPES)."
 
 				validate_archivefiles
 				[[ "$ROVERBOSITY" -ge 2 ]] && validate_package_function

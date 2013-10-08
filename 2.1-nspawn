@@ -60,7 +60,7 @@ do
 				echo "${source[*]}" >> "$VMTMPDIR"/sources-"$ROHOSTNAME"
 				echo "$url" >> "$VMTMPDIR"/urls-"$ROHOSTNAME"
 				echo "${provides[*]}" >> "$VMTMPDIR"/pkgs-"$ROHOSTNAME"
-				[[ "${#pkgname[*]}" == 1 ]] && echo "$pkgname=$pkgver" >> "$VMTMPDIR"/pkgs-"$ROHOSTNAME" || echo "${pkgname[*]}" >> "$VMTMPDIR"/splitpkgs-"$ROHOSTNAME";
+				[[ "${#pkgname[*]}" -le 1 ]] && echo "$pkgname=$pkgver" >> "$VMTMPDIR"/pkgs-"$ROHOSTNAME" || echo "${pkgname[*]}" >> "$VMTMPDIR"/splitpkgs-"$ROHOSTNAME";
 			)
 			rm "$VMTMPDIR"/setbefore-"$DIRNAME" "$VMTMPDIR"/setafter-"$DIRNAME" 2>/dev/null
 		done
