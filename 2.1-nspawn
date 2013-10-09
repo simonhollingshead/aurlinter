@@ -7,70 +7,64 @@ FILEPATHS=($1)
 for FILEPATH in "${FILEPATHS[@]}"
 do
 	DIRPATH="${FILEPATH%/*}"
-	DIRNAME="${DIRPATH##*/}"
+	DIRPATH="${DIRPATH#./}"
+	DIRNAME="${DIRPATH//\//-----}"
 
-	if [[ ! -f "$VMTMPDIR"/sourced/"$DIRNAME" ]] || [[ -f "$VMTMPDIR"/doing-"$DIRNAME" ]]; then
-		for CARCH in "${SOURCEARCH[@]}"
-		do
-			# Subshell to stop the mess of variables some PKGBUILDs will inevitably create.
-			# Set breaks functions onto multiple lines, messing up the sort.
-			# To try to keep this test framework out of the way of the PKGBUILD, verbosely named readonly variables are used.
-			# This is also important to ensure the diff between the two 'set' operations really is a subset of set - so I can source it later.
+	for CARCH in "${SOURCEARCH[@]}"
+	do
+		# Subshell to stop the mess of variables some PKGBUILDs will inevitably create.
+		# Set breaks functions onto multiple lines, messing up the sort.
+		# To try to keep this test framework out of the way of the PKGBUILD, verbosely named readonly variables are used.
+		# This is also important to ensure the diff between the two 'set' operations really is a subset of set - so I can source it later.
+		# FIXME: If I make setbefore and setafter into variables, the `comm` makes the subshell zombie.
+		# For 40k PKGBUILDs and two CARCHes, this is bad!
+		# compgen is used since set with newlines does not work correctly and does not promise a valid subset of set.
+		# compgen will give each var on a newline, so its count should match set to guarantee safety in use of sort and grep.
+		(
+			unset FILEPATHS
+			readonly ROVMTMPDIR="$VMTMPDIR"
+			readonly RODIRNAME="$DIRNAME"
+			readonly ROHOSTNAME="$HOSTNAME"
+			readonly ROCARCH="$CARCH"
+			readonly ROSTDOUTLOC="$VMTMPDIR"/temporary/"$DIRNAME"-"$CARCH"-stdout
+			readonly ROSTDERRLOC="$VMTMPDIR"/temporary/"$DIRNAME"-"$CARCH"-stderr
 
-			# FIXME: If I make setbefore and setafter into variables, the `comm` makes the subshell zombie.
-			# For 40k PKGBUILDs and two CARCHes, this is bad!
-
-			# compgen is used since set with newlines does not work correctly and does not promise a valid subset of set.
-			# compgen will give each var on a newline, so its count should match set to guarantee safety in use of sort and grep.
-			(
-				unset FILEPATHS
-				readonly ROVMTMPDIR="$VMTMPDIR"
-				readonly RODIRNAME="$DIRNAME"
-				readonly ROHOSTNAME="$HOSTNAME"
-				readonly ROCARCH="$CARCH"
-				readonly ROSTDOUTLOC="$VMTMPDIR"/temporary/"$DIRNAME"-"$CARCH"-stdout
-				readonly ROSTDERRLOC="$VMTMPDIR"/temporary/"$DIRNAME"-"$CARCH"-stderr
-
-				cd "$VMWORKDIR"
-				unset -f $(declare -F | cut -d " " -f3)
-				set | sort > "$ROVMTMPDIR"/setbefore-"$RODIRNAME"
+			cd "$VMWORKDIR/$EXTDIR"
+			unset -f $(declare -F | cut -d " " -f3)
+			set | sort > "$ROVMTMPDIR"/setbefore-"$RODIRNAME"
 				
-				source "$FILEPATH" > "$ROSTDOUTLOC" 2> "$ROSTDERRLOC" <<< yes ''
+			source "$FILEPATH" > "$ROSTDOUTLOC" 2> "$ROSTDERRLOC" <<< yes ''
+			[[ -s "$ROSTDOUTLOC" ]] && STDOUT="$(cat $ROSTDOUTLOC)"
+			[[ -s "$ROSTDERRLOC" ]] && STDERR="$(cat $ROSTDERRLOC)"
+			for SETFUNCTIONNAME in $(declare -F | cut -d " " -f3)
+			do
+				SETFUNCTIONNAMECLEAN="${SETFUNCTIONNAME//[^A-Za-z0-9_]/_}"
+				declare pkgbuildfunction_"${SETFUNCTIONNAMECLEAN/#[^A-Za-z_]/_}"="$(declare -f $SETFUNCTIONNAME)"
+				unset -f "$SETFUNCTIONNAME"
+			done
+			unset SETFUNCTIONNAME SETFUNCTIONNAMECLEAN
 
-				[[ -s "$ROSTDOUTLOC" ]] && STDOUT="$(cat $ROSTDOUTLOC)"
-				[[ -s "$ROSTDERRLOC" ]] && STDERR="$(cat $ROSTDERRLOC)"
+			set | sort > "$ROVMTMPDIR"/setafter-"$RODIRNAME"
 
-				for SETFUNCTIONNAME in $(declare -F | cut -d " " -f3)
-				do
-					SETFUNCTIONNAMECLEAN="${SETFUNCTIONNAME//[^A-Za-z0-9_]/_}"
-					declare pkgbuildfunction_"${SETFUNCTIONNAMECLEAN/#[^A-Za-z_]/_}"="$(declare -f $SETFUNCTIONNAME)"
-					unset -f "$SETFUNCTIONNAME"
-				done
-				unset SETFUNCTIONNAME SETFUNCTIONNAMECLEAN
-
-				set | sort > "$ROVMTMPDIR"/setafter-"$RODIRNAME"
-
-				# Minus BASH_COMMAND, BASHPID, BASH_SUBSHELL, COMP_WORDBREAKS, HISTCMD, LINENO, RANDOM, SECONDS.
-				[[ $(($(compgen -v | sort | wc -l) - 8)) != $(cat "$ROVMTMPDIR"/setafter-"$RODIRNAME" | wc -l) ]] && echo "Analysis forcibly terminated, cannot handle newlines in array content." >> "$ROSTDERRLOC" && exit
-				rm "$ROSTDOUTLOC" "$ROSTDERRLOC" > /dev/null
-				comm -13 "$ROVMTMPDIR"/setbefore-"$RODIRNAME" "$ROVMTMPDIR"/setafter-"$RODIRNAME" | grep -v "^_=\|^PIPESTATUS=\|^BASHOPTS=\|^BASH_REMATCH=\|^BASH_ARGV=\|^SHELLOPTS=" > "$ROVMTMPDIR"/sourced/"$RODIRNAME"-"$ROCARCH"
-				#(source "$ROVMTMPDIR"/sourced/"$RODIRNAME"-"$ROCARCH") || declare -p $(comm -13 "$ROVMTMPDIR"/setbefore-"$RODIRNAME" "$ROVMTMPDIR"/setafter-"$RODIRNAME" | grep -v "^_\|^PIPESTATUS=\|^BASHOPTS=\|^BASH_REMATCH=" | grep -o "^[^=]*") > "$ROVMTMPDIR"/sourced/"$RODIRNAME"-"$ROCARCH"
+			# Minus BASH_COMMAND, BASHPID, BASH_SUBSHELL, COMP_WORDBREAKS, HISTCMD, LINENO, RANDOM, SECONDS.
+			[[ $(($(compgen -v | sort | wc -l) - 8)) != $(cat "$ROVMTMPDIR"/setafter-"$RODIRNAME" | wc -l) ]] && echo "Analysis forcibly terminated, cannot handle newlines in array content." >> "$ROSTDERRLOC" && exit
+			rm "$ROSTDOUTLOC" "$ROSTDERRLOC" > /dev/null
+			comm -13 "$ROVMTMPDIR"/setbefore-"$RODIRNAME" "$ROVMTMPDIR"/setafter-"$RODIRNAME" | grep -v "^_=\|^PIPESTATUS=\|^BASHOPTS=\|^BASH_REMATCH=\|^BASH_ARGV=\|^SHELLOPTS=" > "$ROVMTMPDIR"/sourced/"$RODIRNAME"-"$ROCARCH"
 				
-				IFS=$'\n'
-				echo "${source[*]}" >> "$VMTMPDIR"/sources-"$ROHOSTNAME"
-				echo "$url" >> "$VMTMPDIR"/urls-"$ROHOSTNAME"
-				echo "${provides[*]}" >> "$VMTMPDIR"/pkgs-"$ROHOSTNAME"
-				[[ "${#pkgname[*]}" -le 1 ]] && echo "$pkgname=$pkgver" >> "$VMTMPDIR"/pkgs-"$ROHOSTNAME" || echo "${pkgname[*]}" >> "$VMTMPDIR"/splitpkgs-"$ROHOSTNAME";
-			)
-			rm "$VMTMPDIR"/setbefore-"$DIRNAME" "$VMTMPDIR"/setafter-"$DIRNAME" 2>/dev/null
-		done
+			IFS=$'\n'
+			echo "${source[*]}" >> "$VMTMPDIR"/sources-"$ROHOSTNAME"
+			echo "$url" >> "$VMTMPDIR"/urls-"$ROHOSTNAME"
+			echo "${provides[*]}" >> "$VMTMPDIR"/pkgs-"$ROHOSTNAME"
+			[[ "${#pkgname[*]}" -le 1 ]] && echo "$pkgname=$pkgver" >> "$VMTMPDIR"/pkgs-"$ROHOSTNAME" || echo "${pkgname[*]}" >> "$VMTMPDIR"/splitpkgs-"$ROHOSTNAME";
+		)
+		rm "$VMTMPDIR"/setbefore-"$DIRNAME" "$VMTMPDIR"/setafter-"$DIRNAME" 2>/dev/null
+	done
 
-		ITERCNT="${#SOURCEARCH[@]}"
-		ITERCNTMINONE=$((ITERCNT - 1))
-		for (( i=1; i<"$ITERCNT"; i++ ))
-		do
-			cmp -s "$VMTMPDIR"/sourced/"$DIRNAME"-{"${SOURCEARCH[$i-1]}","${SOURCEARCH[$i]}"} || break
-			[[ "$i" == "$ITERCNTMINONE" ]] && cp "$VMTMPDIR"/sourced/"$DIRNAME"-{"${SOURCEARCH[$i-1]}",allarches} && rm ${SOURCEARCH[@]/#/$VMTMPDIR/sourced/$DIRNAME-}
-		done
-	fi
+	ITERCNT="${#SOURCEARCH[@]}"
+	ITERCNTMINONE=$((ITERCNT - 1))
+	for (( i=1; i<"$ITERCNT"; i++ ))
+	do
+		cmp -s "$VMTMPDIR"/sourced/"$DIRNAME"-{"${SOURCEARCH[$i-1]}","${SOURCEARCH[$i]}"} || break
+		[[ "$i" == "$ITERCNTMINONE" ]] && cp "$VMTMPDIR"/sourced/"$DIRNAME"-{"${SOURCEARCH[$i-1]}",allarches} && rm ${SOURCEARCH[@]/#/$VMTMPDIR/sourced/$DIRNAME-}
+	done
 done

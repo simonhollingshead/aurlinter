@@ -27,23 +27,7 @@ This may mean that some instances of a message such as 'wrote to stdout' or 'wro
 REPORTHEADER
 
 	echo "==========================================================[Extraction]"
-	if [[ "$VERBOSITY" -ge 5 ]]; then
-		cat res/extractbugs
-	elif [[ "$VERBOSITY" -ge 3 ]]; then
-		grep "^E: \|^W: " "./res/extractbugs" | sed 's/:$//'
-	else
-		grep "^E: " "./res/extractbugs" | sed 's/:$//'
-	fi
-
-	if [[ "$VERBOSITY" -ge 3 ]]; then
-		echo
-		echo "========================================[Extracted folder permissions]"
-		if [[ "$VERBOSITY" -ge 5 ]]; then
-			cat res/permissionbugs
-		else
-			sed 's|.*/||' "./res/permissionbugs"
-		fi
-	fi
+	cat res/extractbugs
 
 	if [[ "$VERBOSITY" -ge 3 ]]; then
 		echo
@@ -51,9 +35,15 @@ REPORTHEADER
 		if [[ "$VERBOSITY" -ge 5 ]]; then
 			cat res/executablebugs
 		else
-			sed 's|[^ ]* ./[^/]*/[^/]*/||' "./res/executablebugs"
+			sed 's|[^ ]* ./||;s|/|\n|; s|\n.*||' "./res/executablebugs" | sort | uniq
 		fi
 	fi
+
+	echo
+	echo "=========================================[PKGBUILDs in odd locations]"
+	pushd ./prep/ext/ >/dev/null
+	find . -mindepth 4 -type f -name PKGBUILD
+	popd >/dev/null
 
 	echo
 	echo "=====================================[PKGBUILDs unable to be analysed]"
@@ -110,7 +100,7 @@ REPORTHEADER
 	expac -Sg '%n' base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk '{print $1;}' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' | SHELL=/usr/bin/bash parallel -j8 'expac -S1 "%n=%v  %P" {} | sed "s/  /\n/g" | grep -v "\.so=\|\.so$\|^$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > ../tmp_basedevel
 	expac -S "%n=%v  %P" | sed 's/  /\n/g' > ../tmp_allpkgnames
 	# Regular expressions below with a character count have to be written {number\} otherwise parallel understands it as the {n} option.  \{\} is interpreted as \{} instead.
-	find . -type f | sort | SHELL=/usr/bin/bash parallel -k -N 50 -j8 '
+	find . -type f | sort | SHELL=/usr/bin/bash parallel -k -N 5 -j8 '
 		inarray() { local insensitive=$1 n=$2 h; shift 2; $insensitive && shopt -s nocasematch; for h; do [[ $n = "$h" ]] || continue; $insensitive && shopt -u nocasematch; return 0; done; shopt -u nocasematch; return 1; }
 		insuffixarray() { local insensitive=$1 n=$2 h; shift 2; $insensitive && shopt -s nocasematch; for h; do [[ $n = *"$h" ]] || continue; $insensitive && shopt -u nocasematch; return 0; done; shopt -u nocasematch; return 1; }
 		
@@ -120,7 +110,7 @@ REPORTHEADER
 		dep_nottoolong() { local DESC="${1#*:}"; [[ "$DESC" != "$1" ]] && [[ "${#DESC}" -gt 150 ]] && echo "[*] Optional dependency description excessively long:" && echo "$1"; }
 
 		validate_vcs_suffix() { local SOURCEENTRY PREFIX=false FRAGMENT=true RETURNMSG="" VCSTYPE="${PKGBUILDIDENTIFIER##*-}"; inarray false "$VCSTYPE" "${!ROVCSTYPES[@]}" || return; inarray false "${ROVCSTYPES[$VCSTYPE]}" "${makedepends[@]}" || RETURNMSG="$RETURNMSG  Failed to declare makedepend on ${ROVCSTYPES[$VCSTYPE]}."; for SOURCEENTRY in "${source[@]}"; do SOURCEENTRY="${SOURCEENTRY#*::}"; { [[ "$SOURCEENTRY" == "$VCSTYPE://"* ]] || [[ "$SOURCEENTRY" == "$VCSTYPE+"* ]]; } && PREFIX=true && { [[ "${SOURCEENTRY##*#}" == "$SOURCEENTRY" ]] || { [[ "${SOURCEENTRY##*#}" != "revision="* ]] && [[ "${SOURCEENTRY##*#}" != "tag="* ]]; }; } && FRAGMENT=false; ! $FRAGMENT && $PREFIX && break; done; ! $PREFIX && RETURNMSG="$RETURNMSG  No VCS source array entry found."; $PREFIX && $FRAGMENT && RETURNMSG="$RETURNMSG  Only VCS sources found specified a revision rather than tracking the repository."; [[ "$RETURNMSG" != "" ]] && echo "[*] Bad VCS package:$RETURNMSG"; }
-		validate_pkgname() { [[ "$ROVERBOSITY" -ge 4 ]] && [[ "$PKGBUILDIDENTIFIER" != "$ROEXTRACTEDDIRNAME" ]] && echo "[*] Unzipped directory name and package name do not match.  (Real package identifier is $PKGBUILDIDENTIFIER)"; local NAME && for NAME in "${pkgname[@]}" "${pkgbase[@]}"; do [[ "$NAME" =~ ^[0-9a-zA-Z@._+][0-9a-zA-Z@._+-]*$ ]] || echo "[*] Package name contains characters outside the permitted range.  ($NAME)"; done; validate_vcs_suffix;}
+		validate_pkgname() { [[ "$ROVERBOSITY" -ge 4 ]] && { [[ "$ROARCHIVENAME" != "$ROEXTRACTEDDIRECTORY" ]] || [[ "$PKGBUILDIDENTIFIER" != "$ROEXTRACTEDDIRECTORY" ]]; } && echo "[*] Archive name $ROARCHIVENAME, the directory inside $ROEXTRACTEDDIRECTORY, and the package name $PKGBUILDIDENTIFIER do not match."; local NAME && for NAME in "${pkgname[@]}" "${pkgbase[@]}"; do [[ "$NAME" =~ ^[0-9a-zA-Z@._+][0-9a-zA-Z@._+-]*$ ]] || echo "[*] Package name contains characters outside the permitted range.  ($NAME)"; done; validate_vcs_suffix;}
 		validate_pkgver() { [[ "$pkgrel" =~ [^A-Za-z0-9._] ]] && echo "[*] Disallowed pkgver format.  ($pkgver)"; }
 		validate_pkgrel() { [[ "$ROVERBOSITY" -ge 3 ]] && [[ "$pkgrel" =~ [^0-9] ]] && echo "[*] Non-integer or negative pkgrel.  ($pkgrel)"; }
 		validate_pkgdesc() { [[ "$ROVERBOSITY" -ge 3 ]] && grep -qwf <(echo "$PKGBUILDIDENTIFIER") <(echo "$pkgdesc") && echo "[*] Found package name inside pkgdesc. ($PKGBUILDIDENTIFIER)"; { { [[ "$ROVERBOSITY" == 3 ]] && [[ ${#pkgdesc} -gt 150 ]]; } || { [[ "$ROVERBOSITY" == 4 ]] && [[ ${#pkgdesc} -gt 115 ]]; } || { [[ "$ROVERBOSITY" -ge 5 ]] && [[ ${#pkgdesc} -gt 80 ]]; } } && echo "[*] Excessively long pkgdesc. (${#pkgdesc} chars)"; }
@@ -133,8 +123,8 @@ REPORTHEADER
 		validate_epoch() { [[ "$ROVERBOSITY" -ge 3 ]] && [[ "$epoch" =~ [^0-9] ]] && echo "[*] Non-integer or negative epoch.  ($epoch)"; }
 		validate_pkgbase() { return; } # Handled by pkgname where needed.
 		validate_groups() { [[ "$ROVERBOSITY" -ge 5 ]] && [[ $(IFS=""; echo "${groups}[@]") != "" ]] && echo "[*] AUR packages gain no benefit from having a defined group."; }
-		validate_install() { [[ $install != "" ]] && [ ! -f "../../prep/ext/$ROEXTRACTEDDIRNAME/$install" ] && echo "[*] Install file not found in archive.  ($install)"; }
-		validate_changelog() { [[ "$changelog" != "" ]] && [ ! -f "../../prep/ext/$ROEXTRACTEDDIRNAME/$changelog" ] && "[*] Changelog file not found in archive.  ($changelog)"; }
+		validate_install() { [[ $install != "" ]] && [ ! -f "../../prep/ext/$ROARCHIVENAME/$ROEXTRACTEDDIRECTORY/$install" ] && echo "[*] Install file not found in archive.  ($install)"; }
+		validate_changelog() { [[ "$changelog" != "" ]] && [ ! -f "../../prep/ext/$ROARCHIVENAME/$ROEXTRACTEDDIRECTORY/$changelog" ] && "[*] Changelog file not found in archive.  ($changelog)"; }
 		
 		validate_depends() { local DEPENDENCYLINE && for DEPENDENCYLINE in "${depends[@]}"; do dep_wellformatted true "$DEPENDENCYLINE" && dep_canbesatisfied "$DEPENDENCYLINE"; done; }
 		validate_makedepends() { local DEPENDENCYLINE && for DEPENDENCYLINE in "${makedepends[@]}"; do dep_wellformatted true "$DEPENDENCYLINE" && dep_notinbasedevel "$DEPENDENCYLINE" && dep_canbesatisfied "$DEPENDENCYLINE"; done; }
@@ -146,7 +136,7 @@ REPORTHEADER
 		
 		validate_backup() { [[ "$ROVERBOSITY" -ge 3 ]] && { local BACKUPFILE ABSOLUTE=false && for BACKUPFILE in "${backup[@]}"; do [[ "$BACKUPFILE" == "/"* ]] && ABSOLUTE=true; [[ "$ROVERBOSITY" -ge 5 ]] && [[ "${BACKUPFILE#/}" != "etc/"* ]] && [[ ! "${BACKUPFILE##*/}" =~ (cfg|conf) ]] && echo "[*] Potentially unneeded backup of $BACKUPFILE"; done; $ABSOLUTE && echo "[*] Absolute filepaths found in backup array."; }; }
 		validate_options() { [[ "$ROVERBOSITY" -ge 3 ]] && local OPTIONNAME && for OPTIONNAME in "${options[@]}"; do { [[ $OPTIONNAME == "" ]] || inarray false "${OPTIONNAME#!}" "${ROVALIDOPTIONS[@]}"; } || echo "[*] Unknown option.  ($OPTIONNAME)"; done; }
-		validate_source() { local SOURCEPATH URLLIST=() LOCALLIST=() COMPARETO && for SOURCEPATH in "${source[@]}"; do [[ $(expr index "$SOURCEPATH" "://") != 0 ]] && URLLIST+=("$SOURCEPATH") && continue; [[ ! -f "../../prep/ext/$ROEXTRACTEDDIRNAME/$SOURCEPATH" ]] && echo "[*] Source entry $SOURCEPATH not found in the archive."; done; COMPARETO=$(IFS=$'"'\n'"'; grep -Fxf <(echo "${URLLIST[*]}" | sed "s|::|\n|;s|^.*\n||;s|/$||") "../urllist"); [[ "$COMPARETO" != "" ]] && echo "[*] Could not connect to the following sources:" && echo "$COMPARETO"; }
+		validate_source() { local SOURCEPATH URLLIST=() LOCALLIST=() COMPARETO && for SOURCEPATH in "${source[@]}"; do [[ $(expr index "$SOURCEPATH" "://") != 0 ]] && URLLIST+=("$SOURCEPATH") && continue; [[ ! -f "../../prep/ext/$ROARCHIVENAME/$ROEXTRACTEDDIRECTORY/$SOURCEPATH" ]] && echo "[*] Source entry $SOURCEPATH not found in the archive."; done; COMPARETO=$(IFS=$'"'\n'"'; grep -Fxf <(echo "${URLLIST[*]}" | sed "s|::|\n|;s|^.*\n||;s|/$||") "../urllist"); [[ "$COMPARETO" != "" ]] && echo "[*] Could not connect to the following sources:" && echo "$COMPARETO"; }
 		validate_noextract() { [[ "$ROVERBOSITY" -ge 3 ]] && local NOEXTRACTFILE SOURCEFILE FOUND && for NOEXTRACTFILE in "${noextract[@]}"; do FOUND=false; for SOURCEFILE in "${source[@]}"; do SOURCEFILE="${SOURCEFILE%%::*}"; SOURCEFILE="${SOURCEFILE##*/}"; [[ "$SOURCEFILE" == "$NOEXTRACTFILE" ]] && FOUND=true && break; done; $FOUND || echo "[*] Told not to extract a file, $NOEXTRACTFILE, that was not found in the source array."; done; }
 		validate_md5sums() { [[ "${#md5sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local MD5SUM && for MD5SUM in "${md5sums[@]}"; do { [[ "$MD5SUM" == "SKIP" ]] || [[ "$MD5SUM" =~ ^[0-9a-fA-F]{32\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed md5sum.  ($MD5SUM)"; done; }
 		validate_sha1sums() { [[ "${#sha1sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA1SUM && for SHA1SUM in "${sha1sums[@]}"; do { [[ "$SHA1SUM" == "SKIP" ]] || [[ "$SHA1SUM" =~ ^[0-9a-fA-F]{40\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha1sum.  ($SHA1SUM)"; done; }
@@ -177,9 +167,13 @@ REPORTHEADER
 		INPUT=( {} )
 		for PACKAGE in "${INPUT[@]}"
 		do
-			EXTRACTEDDIRNAME="${PACKAGE##*/}"
-			APPLICABLEARCHES="${EXTRACTEDDIRNAME##*-}"
-			EXTRACTEDDIRNAME="${EXTRACTEDDIRNAME%-*}"
+			FILENAME="${PACKAGE##*/}"
+			APPLICABLEARCHES="${FILENAME##*-}"
+			FILENAMEWOARCH="${FILENAME%-*}"
+			ARCHIVENAME="${FILENAMEWOARCH%%-----*}"
+			EXTRACTEDDIRECTORY="${FILENAMEWOARCH#*-----}"
+			EXTRACTEDDIRECTORY="${EXTRACTEDDIRECTORY%%-----*}"
+
 			RESULT=$(
 				readonly ROVALIDARCHES=(any x86_64 i686 arm armv6h armv7h) # Order these with most popular first, since inarray ends early in such cases.
 				readonly ROVALIDOPTIONS=(strip docs libtool staticlibs emptydirs zipman purge upx debug ccache distcc buildflags makeflags)
@@ -196,7 +190,8 @@ REPORTHEADER
 				ROALLPKGFIELDS+=(backup checkdepends conflicts depends groups makedepends md5sums noextract optdepends options provides replaces sha1sums sha256sums sha384sums sha512sums source DLAGENTS) # OTHER ARRAYS
 				readonly ROALLPKGFIELDS
 
-				readonly ROEXTRACTEDDIRNAME="$EXTRACTEDDIRNAME"
+				readonly ROEXTRACTEDDIRECTORY="$EXTRACTEDDIRECTORY"
+				readonly ROARCHIVENAME="$ARCHIVENAME"
 				readonly ROVERBOSITY="'"$VERBOSITY"'"
 
 				source "$PACKAGE" 2>/dev/null
@@ -251,7 +246,7 @@ REPORTHEADER
 			)
 			[[ $? == 1 ]] && RESULT="Aborting: Could not load data, likely due to use of an associative array."
 			
-			[[ $RESULT != "" ]] && echo "[o] $EXTRACTEDDIRNAME ($APPLICABLEARCHES)" && echo "$RESULT" && echo
+			[[ $RESULT != "" ]] && echo "[o] $EXTRACTEDDIRECTORY ($APPLICABLEARCHES)" && echo "$RESULT" && echo
 		done
 	'
 	rm ../tmp_basedevel ../tmp_allpkgnames
