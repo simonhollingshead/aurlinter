@@ -37,8 +37,8 @@ do
 				
 				source "$FILEPATH" > "$ROSTDOUTLOC" 2> "$ROSTDERRLOC" <<< yes ''
 
-				[[ -s "$ROSTDOUTLOC" ]] && STDOUT=$(cat "$ROSTDOUTLOC")
-				[[ -s "$ROSTDERRLOC" ]] && STDERR=$(cat "$ROSTDERRLOC")
+				[[ -s "$ROSTDOUTLOC" ]] && STDOUT="$(cat $ROSTDOUTLOC)"
+				[[ -s "$ROSTDERRLOC" ]] && STDERR="$(cat $ROSTDERRLOC)"
 
 				for SETFUNCTIONNAME in $(declare -F | cut -d " " -f3)
 				do

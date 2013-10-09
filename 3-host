@@ -268,6 +268,16 @@ REPORTHEADER
 		fi
 	fi
 
+	if [[ "$VERBOSITY" -ge 3 ]]; then
+		echo
+		echo "========================================[Executable files in archive]"
+		if [[ "$VERBOSITY" -ge 5 ]]; then
+			cat res/executablebugs
+		else
+			sed 's|[^ ]* ./[^/]*/[^/]*/||' "./res/executablebugs"
+		fi
+	fi
+
 	echo
 	echo "=====================================[PKGBUILDs unable to be analysed]"
 	pushd ./res/temporary >/dev/null
@@ -303,12 +313,14 @@ REPORTHEADER
 	# TODOS
 	##################################
 	#
+	# CCPL license expression (ccpl:by-sa?)
 	# .asc and .sig files without SKIP hash.
 	# local files with hashes that don't match.
 	# Scope to make dependency checking stronger (dependencies of other dependencies)
 	# Check non-depends to ensure no duplication of depends.
 	# Executables in AUR source archives (?)
-	# Lack of sources, suggesting code in src.
+	# Package has zero sources.
+	# Package has zero non-local sources (but some local ones).
 	# Packages with ONLY ARM architectures.
 	# Check all arrays aren't duplicating any data.
 	#
@@ -330,11 +342,11 @@ REPORTHEADER
 		dep_notinbasedevel() { local PACKAGENAME="${1%%[=><]*}" REQDVERSION="${1##*[=><]}"; [[ "$REQDVERSION" == "$1" ]] && grep -ql "^$PACKAGENAME$\|^$PACKAGENAME=" ../tmp_basedevel && { ! [[ "$ROVERBOSITY" -gt 2 ]] || echo "[*] Base-devel already contains $1."; } && return; [[ "$REQDVERSION" != "$1" ]] && local VERCMP; grep "^$PACKAGENAME=" ../tmp_basedevel | sed "s/*=//" | while read line; do VERCMP=$(vercmp "$REQDVERSION" "${line##*=}"); { { [[ "$VERCMP" == 1 ]] && [[ "$1" == *"<"* ]]; } || { [[ "$VERCMP" == 0 ]] && [[ "$1" == *"="* ]]; } || { [[ "$VERCMP" == -1 ]] && [[ "$1" == *">"* ]]; }; } && { ! [[ "$ROVERBOSITY" -gt 2 ]] || echo "[*] Packages from base-devel already satisfy $1."; } && break; done; }
 		dep_nottoolong() { local DESC="${1#*:}"; [[ "$DESC" != "$1" ]] && [[ "${#DESC}" -gt 150 ]] && echo "[*] Optional dependency description excessively long:" && echo "$1"; }
 
-		validate_vcs_suffix() { local SOURCEENTRY PREFIX=false FRAGMENT=true RETURNMSG="" VCSTYPE="${PKGBUILDIDENTIFIER##*-}"; inarray false "$VCSTYPE" "${!ROVCSTYPES[@]}" || return; inarray false "${ROVCSTYPES[$VCSTYPE]}" "${makedepends[@]}" || RETURNMSG="$RETURNMSG  Failed to declare makedepend on ${ROVCSTYPES[$VCSTYPE]}."; for SOURCEENTRY in "${source[@]}"; do SOURCEENTRY="${SOURCEENTRY#*::}"; { [[ "$SOURCEENTRY" == "$VCSTYPE://"* ]] || [[ "$SOURCEENTRY" == "$VCSTYPE+"* ]]; } && PREFIX=true && { [[ "${SOURCEENTRY##*#}" == "$SOURCEENTRY" ]] || [[ "${SOURCEENTRY##*#}" != "revision="* ]]; } && FRAGMENT=false; ! $FRAGMENT && $PREFIX && break; done; ! $PREFIX && RETURNMSG="$RETURNMSG  No VCS source array entry found."; $PREFIX && $FRAGMENT && RETURNMSG="$RETURNMSG  Only VCS sources found specified a revision rather than tracking the repository."; [[ "$RETURNMSG" != "" ]] && echo "[*] Bad VCS package:$RETURNMSG"; }
+		validate_vcs_suffix() { local SOURCEENTRY PREFIX=false FRAGMENT=true RETURNMSG="" VCSTYPE="${PKGBUILDIDENTIFIER##*-}"; inarray false "$VCSTYPE" "${!ROVCSTYPES[@]}" || return; inarray false "${ROVCSTYPES[$VCSTYPE]}" "${makedepends[@]}" || RETURNMSG="$RETURNMSG  Failed to declare makedepend on ${ROVCSTYPES[$VCSTYPE]}."; for SOURCEENTRY in "${source[@]}"; do SOURCEENTRY="${SOURCEENTRY#*::}"; { [[ "$SOURCEENTRY" == "$VCSTYPE://"* ]] || [[ "$SOURCEENTRY" == "$VCSTYPE+"* ]]; } && PREFIX=true && { [[ "${SOURCEENTRY##*#}" == "$SOURCEENTRY" ]] || { [[ "${SOURCEENTRY##*#}" != "revision="* ]] && [[ "${SOURCEENTRY##*#}" != "tag="* ]]; }; } && FRAGMENT=false; ! $FRAGMENT && $PREFIX && break; done; ! $PREFIX && RETURNMSG="$RETURNMSG  No VCS source array entry found."; $PREFIX && $FRAGMENT && RETURNMSG="$RETURNMSG  Only VCS sources found specified a revision rather than tracking the repository."; [[ "$RETURNMSG" != "" ]] && echo "[*] Bad VCS package:$RETURNMSG"; }
 		validate_pkgname() { [[ "$ROVERBOSITY" -ge 4 ]] && [[ "$PKGBUILDIDENTIFIER" != "$ROEXTRACTEDDIRNAME" ]] && echo "[*] Unzipped directory name and package name do not match.  (Real package identifier is $PKGBUILDIDENTIFIER)"; local NAME && for NAME in "${pkgname[@]}" "${pkgbase[@]}"; do [[ "$NAME" =~ ^[0-9a-zA-Z@._+][0-9a-zA-Z@._+-]*$ ]] || echo "[*] Package name contains characters outside the permitted range.  ($NAME)"; done; validate_vcs_suffix;}
 		validate_pkgver() { [[ "$pkgrel" =~ [^A-Za-z0-9._] ]] && echo "[*] Disallowed pkgver format.  ($pkgver)"; }
 		validate_pkgrel() { [[ "$ROVERBOSITY" -ge 3 ]] && [[ "$pkgrel" =~ [^0-9] ]] && echo "[*] Non-integer or negative pkgrel.  ($pkgrel)"; }
-		validate_pkgdesc() { [[ "$ROVERBOSITY" -ge 3 ]] && grep -qwf <(echo "$PKGBUILDIDENTIFIER") <(echo "$pkgdesc") && echo "[*] Found package name inside pkgdesc. ($PKGBUILDIDENTIFIER)"; { { [[ "$ROVERBOSITY" == 3 ]] && [[ ${#pkgdesc} -gt 150 ]]; } || { [[ "$ROVERBOSITY" == 4 ]] && [[ ${#pkgdesc} -gt 100 ]]; } || { [[ "$ROVERBOSITY" -ge 5 ]] && [[ ${#pkgdesc} -gt 70 ]]; } } && echo "[*] Pkgdesc is excessively long. (${#pkgdesc} chars)"; }
+		validate_pkgdesc() { [[ "$ROVERBOSITY" -ge 3 ]] && grep -qwf <(echo "$PKGBUILDIDENTIFIER") <(echo "$pkgdesc") && echo "[*] Found package name inside pkgdesc. ($PKGBUILDIDENTIFIER)"; { { [[ "$ROVERBOSITY" == 3 ]] && [[ ${#pkgdesc} -gt 150 ]]; } || { [[ "$ROVERBOSITY" == 4 ]] && [[ ${#pkgdesc} -gt 115 ]]; } || { [[ "$ROVERBOSITY" -ge 5 ]] && [[ ${#pkgdesc} -gt 80 ]]; } } && echo "[*] Excessively long pkgdesc. (${#pkgdesc} chars)"; }
 		validate_url() { grep -qxFf <(echo "$url" | sed "\|://|!d;s|/$||") "../urllist" && echo "[*] Could not connect to address in url field.  ($url)"; }
 		validate_arch() { [[ "$ROVERBOSITY" -ge 2 ]] && local ARCHITECTURENAME && for ARCHITECTURENAME in "${arch[@]}"; do inarray false "$ARCHITECTURENAME" "${ROVALIDARCHES[@]}" || echo "[*] Architecture not recognised.  ($ARCHITECTURENAME)"; done; }
 		validate_license() { [[ "$ROVERBOSITY" -ge 4 ]] && local LICENSENAME && for LICENSENAME in "${license[@]}"; do [[ "$LICENSENAME" == "custom" ]] || { [[ "$LICENSENAME" == "custom:"?* ]] && { ! inarray true "${LICENSENAME#custom:}" "${ROVALIDILICENSES[@]}" && ! inarray false "${LICENSENAME#custom:}" "${ROVALIDLICENSES[@]}"; }; } || inarray true "$LICENSENAME" "${ROVALIDILICENSES[@]}" || inarray false "$LICENSENAME" "${ROVALIDLICENSES[@]}" || echo "[*] Bad license name.  ($LICENSENAME)"; done; }
@@ -359,11 +371,11 @@ REPORTHEADER
 		validate_options() { [[ "$ROVERBOSITY" -ge 3 ]] && local OPTIONNAME && for OPTIONNAME in "${options[@]}"; do { [[ $OPTIONNAME == "" ]] || inarray false "${OPTIONNAME#!}" "${ROVALIDOPTIONS[@]}"; } || echo "[*] Unknown option.  ($OPTIONNAME)"; done; }
 		validate_source() { local SOURCEPATH URLLIST=() LOCALLIST=() COMPARETO && for SOURCEPATH in "${source[@]}"; do [[ $(expr index "$SOURCEPATH" "://") != 0 ]] && URLLIST+=("$SOURCEPATH") && continue; [[ ! -f "../../prep/ext/$ROEXTRACTEDDIRNAME/$SOURCEPATH" ]] && echo "[*] Source entry $SOURCEPATH not found in the archive."; done; COMPARETO=$(IFS=$'"'\n'"'; grep -Fxf <(echo "${URLLIST[*]}" | sed "s|::|\n|;s|^.*\n||;s|/$||") "../urllist"); [[ "$COMPARETO" != "" ]] && echo "[*] Could not connect to the following sources:" && echo "$COMPARETO"; }
 		validate_noextract() { [[ "$ROVERBOSITY" -ge 3 ]] && local NOEXTRACTFILE SOURCEFILE FOUND && for NOEXTRACTFILE in "${noextract[@]}"; do FOUND=false; for SOURCEFILE in "${source[@]}"; do SOURCEFILE="${SOURCEFILE%%::*}"; SOURCEFILE="${SOURCEFILE##*/}"; [[ "$SOURCEFILE" == "$NOEXTRACTFILE" ]] && FOUND=true && break; done; $FOUND || echo "[*] Told not to extract a file, $NOEXTRACTFILE, that was not found in the source array."; done; }
-		validate_md5sums() { [[ "${#md5sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local MD5SUM && for MD5SUM in "${md5sums[@]}"; do { [[ "$MD5SUM" == "SKIP" ]] || [[ "$MD5SUM" =~ ^[0-9a-f]{32\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed md5sum.  ($MD5SUM)"; done; }
-		validate_sha1sums() { [[ "${#sha1sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA1SUM && for SHA1SUM in "${sha1sums[@]}"; do { [[ "$SHA1SUM" == "SKIP" ]] || [[ "$SHA1SUM" =~ ^[0-9a-f]{40\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha1sum.  ($SHA1SUM)"; done; }
-		validate_sha256sums() { [[ "${#sha256sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA256SUM && for SHA256SUM in "${sha256sums[@]}"; do { [[ "$SHA256SUM" == "SKIP" ]] || [[ "$SHA256SUM" =~ ^[0-9a-f]{64\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha256sum.  ($SHA256SUM)"; done; }
-		validate_sha384sums() { [[ "${#sha384sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA384SUM && for SHA384SUM in "${sha384sums[@]}"; do { [[ "$SHA384SUM" == "SKIP" ]] || [[ "$SHA384SUM" =~ ^[0-9a-f]{96\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha384sum.  ($SHA384SUM)"; done; }
-		validate_sha512sums() { [[ "${#sha512sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA512SUM && for SHA512SUM in "${sha512sums[@]}"; do { [[ "$SHA512SUM" == "SKIP" ]] || [[ "$SHA512SUM" =~ ^[0-9a-f]{128\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha512sum.  ($SHA512SUM)"; done; }
+		validate_md5sums() { [[ "${#md5sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local MD5SUM && for MD5SUM in "${md5sums[@]}"; do { [[ "$MD5SUM" == "SKIP" ]] || [[ "$MD5SUM" =~ ^[0-9a-fA-F]{32\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed md5sum.  ($MD5SUM)"; done; }
+		validate_sha1sums() { [[ "${#sha1sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA1SUM && for SHA1SUM in "${sha1sums[@]}"; do { [[ "$SHA1SUM" == "SKIP" ]] || [[ "$SHA1SUM" =~ ^[0-9a-fA-F]{40\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha1sum.  ($SHA1SUM)"; done; }
+		validate_sha256sums() { [[ "${#sha256sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA256SUM && for SHA256SUM in "${sha256sums[@]}"; do { [[ "$SHA256SUM" == "SKIP" ]] || [[ "$SHA256SUM" =~ ^[0-9a-fA-F]{64\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha256sum.  ($SHA256SUM)"; done; }
+		validate_sha384sums() { [[ "${#sha384sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA384SUM && for SHA384SUM in "${sha384sums[@]}"; do { [[ "$SHA384SUM" == "SKIP" ]] || [[ "$SHA384SUM" =~ ^[0-9a-fA-F]{96\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha384sum.  ($SHA384SUM)"; done; }
+		validate_sha512sums() { [[ "${#sha512sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA512SUM && for SHA512SUM in "${sha512sums[@]}"; do { [[ "$SHA512SUM" == "SKIP" ]] || [[ "$SHA512SUM" =~ ^[0-9a-fA-F]{128\}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha512sum.  ($SHA512SUM)"; done; }
 		
 		validate_STDOUT() {  [[ "$ROVERBOSITY" -ge 2 ]] && echo "[*] Wrote to stdout during sourcing:"; echo "$STDOUT"; }
 		validate_STDERR() { echo "[*] Wrote to stderr during sourcing:"; echo "$STDERR"; }
@@ -383,7 +395,7 @@ REPORTHEADER
 
 		validate_archivefiles() { return; }
 		validate_disgustingstrings() { local FUNCTIONNAME && for FUNCTIONNAME in "${PKGBUILDFUNCTIONS[@]}"; do echo "${!FUNCTIONNAME}" | grep -wq "sudo" && echo "[*] Found using sudo within ${FUNCTIONNAME#pkgbuildfunction_}()."; echo "${!FUNCTIONNAME}" | tr "\n" " "  | grep -Eq "\|\|[[:space:]]*return" && echo "[*] Found using || return within ${FUNCTIONNAME#pkgbuildfunction_}()."; echo "${!FUNCTIONNAME}" | tr "\n" " "  | grep -Eq "[[:space:]](CARCH|CFLAGS|CHOST|CPPFLAGS|CXXFLAGS|DEBUG_CFLAGS|DEBUG_CXXFLAGS|LDFLAGS|MAKEFLAGS|MAKEOPTS)+?=" && echo "[*] Found changing MAKEOPTS within ${FUNCTIONNAME#pkgbuildfunction_}()."; done; }
-		validate_package_function() { declare -p pkgbuildfunction_package >/dev/null 2>&1 || echo "[*] PKGBUILD has no package() function."; }
+		validate_package_function() { compgen -v | grep -ql "^pkgbuildfunction_package$\|^pkgbuildfunction_package_" || echo "[*] PKGBUILD has no package() function."; }
 
 		INPUT=( {} )
 		for PACKAGE in "${INPUT[@]}"
@@ -465,6 +477,7 @@ REPORTHEADER
 			[[ $RESULT != "" ]] && echo "[o] $EXTRACTEDDIRNAME ($APPLICABLEARCHES)" && echo "$RESULT" && echo
 		done
 	'
+	rm ../tmp_basedevel ../tmp_allpkgnames
 	popd >/dev/null
 }
 
