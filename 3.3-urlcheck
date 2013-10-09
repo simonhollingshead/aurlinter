@@ -1,0 +1,225 @@
+#!/bin/bash
+
+source config
+
+UA="Mozilla/5.0 (X11; Linux x86_64; rv:24.0) Gecko/20100101 Firefox/24.0"
+
+fetch_http() {
+	# FIXME: All of the QUERYx for HTTP use the -k flag since people could install their own certs.
+	# FIXME continued: If there was some policy that people cannot be expected to install new certs, they can be removed.
+	# First, try a standard HEAD request.  Malformed URL or failed DNS resolve immediately halt.
+	QUERY1=$(curl -sIkLA "$UA" -m 15 -o /dev/null -w %{http_code} -- "$1")
+	ERRCODE=$?
+	[[ "$QUERY1" == "200" ]] && return 0
+	[[ "$ERRCODE" -eq 3 ]] && echo "http: Malformed URL $@." >&2 && return 1
+	[[ "$ERRCODE" -eq 6 ]] && echo "http: DNS lookup failed for $@." >&2 && return 1
+
+	# Second chance, for those that block HEAD.  Use GET, but with a partial request for the first byte only.
+	# 206 is expected, but some that follow spec badly still give 200 OK.
+	QUERY2=$(curl -skLA "$UA" -m 15 -o /dev/null --header "Range: bytes=0-1" -w %{http_code} -- "$1")
+	{ [[ "$QUERY2" == "206" ]] || [[ "$QUERY2" == "200" ]]; } && return 0
+
+	# Last chance!  Make curl use GET, but internally think it asked for HEAD.  Stops it fetching actual content.
+	QUERY3=$(curl -sIkLA "$UA" -X GET -m 15 -o /dev/null -w %{http_code} -- "$1")
+	{ [[ "$QUERY3" == "206" ]] || [[ "$QUERY3" == "200" ]]; } && return 0
+
+	# We tried our very best.
+	[[ "$QUERY3" == "000" ]] && echo "http: Connection to $@ timed out." >&2 && return 1
+	echo "http: HTTP $QUERY3 returned for $@." >&2 && return 1
+}
+
+fetch_ftp() {
+	QUERY1=$(curl -sLIm 15 -o /dev/null -w %{http_code} -- "$1")
+	ERRCODE=$?
+	[[ "$QUERY1" == 350 ]] && return 0
+	[[ "$ERRCODE" -eq 3 ]] && echo "ftp: Malformed URL $@." >&2 && return 1
+	[[ "$ERRCODE" -eq 6 ]] && echo "ftp: DNS lookup failed for $@." >&2 && return 1
+	[[ "$QUERY1" == "000" ]] && echo "ftp: Connection to $@ timed out." >&2 && return 1
+	echo "ftp: FTP $QUERY1 returned for $@." >&2 && return 1
+}
+
+fetch_git() {
+	case "$2" in
+		"tag")
+			./3.2-expect "$1" "$HOSTPATH/3.1-gitwrap" "refs/tags/$3" &>/dev/null && return 0
+			;;
+		"branch")
+			./3.2-expect "$1" "$HOSTPATH/3.1-gitwrap" "refs/heads/$3" &>/dev/null && return 0
+			;;
+		"commit"|"")
+			# FIXME: You cannot query remote for a given SHA... but who would make up a whole giant hash?
+			./3.2-expect "$1" "$HOSTPATH/3.1-gitwrap" &>/dev/null && return 0
+			;;
+		*)
+			false
+			;;
+	esac
+
+	RETURNVAL=$?
+	case "$RETURNVAL" in
+		"1")
+			echo "git: Unrecognised selector fragment in $@." >&2
+			;;
+		"2")
+			echo "git: Remote repository no longer contains the requested fragment for $@." >&2
+			;;
+		"99")
+			echo "git: Connection forcibly timed out to $@." >&2
+			;;
+		"128")
+			echo "git: Could not connect to $@." >&2
+			;;
+		*)
+			echo "git: Unexpected error ($RETURNVAL) requesting $@." >&2
+			;;
+	esac
+	return 1
+}
+
+fetch_svn() {
+	case "$2" in
+		"revision")
+			RETURNVAL=$(svn info -r "$3" -- "$1" 2>&1)
+			[[ $? == 0 ]] && return 0
+			RETURNVAL=$(echo "$RETURNVAL" | grep -o "E[0-9]*" | tail -1)
+			;;
+		"")
+			RETURNVAL=$(svn info -- "$1" 2>&1)
+			[[ $? == 0 ]] && return 0
+			RETURNVAL=$(echo "$RETURNVAL" | grep -o "E[0-9]*" | tail -1)
+			;;
+		*)
+			false
+			;;
+	esac
+
+	case "$RETURNVAL" in
+		"1")
+			echo "svn: Unrecognised selector fragment in $@." >&2
+			;;
+		"E000110")
+			echo "svn: No repository found at $@." >&2
+			;;
+		"E160006")
+			echo "svn: No such revision found for $@." >&2
+			;;
+		"E200009")
+ 			echo "svn: Remote repository no longer contains the requested fragment for $@." >&2
+ 			;;
+ 		*)
+ 			echo "svn: Unexpected error ($RETURNVAL) requesting $@." >&2
+ 			;;
+ 	esac
+	return 1
+}
+
+fetch_bzr() {
+	bzr revno -- "$1" &>/dev/null && return 0
+	RETURNVAL=$?
+	case "$RETURNVAL" in
+		"3")
+				echo "bzr: No repository found at $@." >&2
+				;;
+ 		*)
+ 			echo "bzr: Unexpected error ($RETURNVAL) requesting $@." >&2
+ 			;;
+ 	esac
+	return 1
+}
+
+fetch_hg() {
+	case "$2" in
+		"branch"|"revision"|"tag")
+			RETURNVAL=$(hg id -r "$3" -- "$1" 2>&1)
+			[[ $? == 0 ]] && return 0
+			RETURNVAL=$(echo "$RETURNVAL" | grep "^abort: ")
+			;;
+		"")
+			RETURNVAL=$(hg id -r tip -- "$1" 2>&1)
+			[[ $? == 0 ]] && return 0
+			RETURNVAL=$(echo "$RETURNVAL" | grep "^abort: ")
+			;;
+		*)
+			RETURNVAL="Unrecognised selector fragment."
+			;;
+	esac
+	echo "hg: Failed fetching $@: $RETURNVAL" >&2
+	return 1
+}
+
+fetch_rsync() {
+	rsync --list-only -- "$1" &>/dev/null && return 0
+	RETURNVAL=$?
+	case "$RETURNVAL" in
+		"5")
+			echo "rsync: No files found at $@." >&2
+			;;
+		"10")
+			echo "rsync: Could not connect to the server at $@." >&2
+			;;
+ 		*)
+ 			echo "rsync: Unexpected error ($RETURNVAL) requesting $@." >&2
+ 			;;
+ 	esac
+	return 1
+}
+
+URLS=( $1 )
+for URL in "${URLS[@]}"
+do
+	URLMINUSHINT="${URL#*+}"
+	PROTOCOL="${URL%%://*}"
+	HINT="${PROTOCOL%%+*}"
+	VCSSELECTOR=${URL##*#}
+	VCSSELECTORNAME=${VCSSELECTOR%%=*}
+	VCSSELECTORVAL=${VCSSELECTOR#*=}
+	[[ "$URL" == "$VCSSELECTOR" ]] && unset VCSSELECTORNAME && unset VCSSELECTORVAL
+	
+	if [[ "$URL" != "" ]]; then
+		case "$PROTOCOL" in
+		 	"http"|"https")
+		 		fetch_http "$URL" && echo "$URL"
+		 		;;
+		 	"ftp")
+		 		fetch_ftp "$URL" &&	echo "$URL"
+		 		;;
+		 	"git")
+		 		fetch_git "${URL%%#*}" "$VCSSELECTORNAME" "$VCSSELECTORVAL" && echo "$URL"
+		 		;;
+		 	"svn")
+				fetch_svn "${URL%%#*}" "$VCSSELECTORNAME" "$VCSSELECTORVAL" && echo "$URL"
+				;;
+		 	"bzr")
+				fetch_bzr "${URL%%#*}" && echo "$URL"
+		 		;;
+		 	"hg")
+		 		fetch_hg "${URL%%#*}" "$VCSSELECTORNAME" "$VCSSELECTORVAL" && echo "$URL"
+		 		;;
+		 	"rsync")
+				fetch_rsync "$URL" && echo "$URL"
+		 		;;
+		 	"scp")
+		 		# TODO
+		 		;;
+		 	*)
+		 		case "$HINT" in
+		 			"git")
+		 				fetch_git "${URLMINUSHINT%%#*}" "$VCSSELECTORNAME" "$VCSSELECTORVAL" && echo "$URL"
+		 				;;
+		 			"svn")
+		 				fetch_svn "${URLMINUSHINT%%#*}" "$VCSSELECTORNAME" "$VCSSELECTORVAL" && echo "$URL"
+		 				;;
+		 			"bzr")
+		 				fetch_bzr "${URLMINUSHINT%%#*}" && echo "$URL"
+		 				;;
+		 			"hg")
+		 				fetch_hg "${URLMINUSHINT%%#*}" "$VCSSELECTORNAME" "$VCSSELECTORVAL" && echo "$URL"
+		 				;;
+		 			*)
+		 				echo "???: Unrecognised protocol, checking failed for $URL." >&2
+		 				;;
+		 		esac
+		 		;;
+		esac
+	fi
+done
