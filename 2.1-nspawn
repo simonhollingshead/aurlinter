@@ -8,7 +8,7 @@ for FILEPATH in "${FILEPATHS[@]}"
 do
 	DIRPATH="${FILEPATH%/*}"
 	DIRPATH="${DIRPATH#./}"
-	DIRNAME="${DIRPATH//\//-----}"
+	DIRNAME="${DIRPATH//\//---}"
 
 	for CARCH in "${SOURCEARCH[@]}"
 	do
@@ -43,6 +43,10 @@ do
 				unset -f "$SETFUNCTIONNAME"
 			done
 			unset SETFUNCTIONNAME SETFUNCTIONNAMECLEAN
+
+			ARCHIVENAME=${DIRPATH%%/*}
+			INNERFOLDER=${DIRPATH#*/}
+			[[ "$INNERFOLDER" == "$DIRPATH" ]] && INNERFOLDER=""
 
 			set | sort > "$ROVMTMPDIR"/setafter-"$RODIRNAME"
 

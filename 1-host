@@ -26,7 +26,7 @@ extractpkgs() {
 	TMP=${TMP%.tar.gz} # A
 	mkdir ./"'"$DLDIR"'"/ext/"$TMP"
 	OUT=$(bsdtar -C ./"'"$DLDIR"'"/ext/"$TMP" -xvf "{}" 2>&1 >/dev/null | grep -v "^x [^:]*$")
-	[[ "$OUT" != "" ]] && printf "E: Errors in decompressing %s:\n%b\n\n" "$TMP" "$OUT"
+	[[ "$OUT" != "" ]] && printf "Errors in decompressing %s:\n%b\n\n" "$TMP" "$OUT"
 	' > ./"$RESULTDIR"/extractbugs
 
 	pushd ./"$DLDIR"/ext >/dev/null
