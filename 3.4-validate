@@ -9,10 +9,8 @@
 # local files with hashes that don't match.
 # Scope to make dependency checking stronger (dependencies of other dependencies)
 # Check non-depends to ensure no duplication of depends.
-# Executables in AUR source archives (?)
 # Package has zero sources.
 # Package has zero non-local sources (but some local ones).
-# Packages with ONLY ARM architectures.
 # Check all arrays aren't duplicating any data.
 #
 # For bad packages, three extra messages:
@@ -138,10 +136,15 @@ validate_url() {
 }
 
 validate_arch() {
-	[[ "$ROVERBOSITY" -ge 2 ]] && local ARCHITECTURENAME && for ARCHITECTURENAME in "${arch[@]}"
+	[[ "$ROVERBOSITY" -ge 2 ]] && local ARCHITECTURENAME OFFICIALARCH=false ALLEXCESS=false && for ARCHITECTURENAME in "${arch[@]}"
 	do
-		inarray false "$ARCHITECTURENAME" "${ROVALIDARCHES[@]}" || echo "[*] Architecture not recognised.  ($ARCHITECTURENAME)"
+		[[ "$ARCHITECTURENAME" == "any" ]] && OFFICIALARCH=true && { [[ ${#A[@]} == 1 ]] || ALLEXCESS=true; } && break
+		inarray false "$ARCHITECTURENAME" "${ROOFFICIALARCHES[@]}" && OFFICIALARCH=true && continue
+		inarray false "$ARCHITECTURENAME" "${ROOTHERARCHES[@]}" && continue
+		echo "[*] Architecture not recognised.  ($ARCHITECTURENAME)"
 	done
+	$ALLEXCESS && echo "[*] Architecture 'all' was declared, but was not the only architecture in the array."
+	[[ "$ROVERBOSITY" -ge 5 ]] && { $OFFICIALARCH || echo "[*] None of Arch's official architectures (${ROOFFICIALARCHES[@]}) were used.  (${arch[@]})"; }
 }
 
 validate_license() {
@@ -411,7 +414,8 @@ do
 	APPLICABLEARCHES="${FILENAME##*-}"
 
 	RESULT=$(
-		readonly ROVALIDARCHES=(any x86_64 i686 arm armv6h armv7h) # Order these with most popular first, since inarray ends early in such cases.
+		readonly ROOFFICIALARCHES=(any x86_64 i686)
+		readonly ROOTHERARCHES=(arm armv6h armv7h)
 		readonly ROVALIDOPTIONS=(strip docs libtool staticlibs emptydirs zipman purge upx debug ccache distcc buildflags makeflags)
 		readonly ROVALIDILICENSES=(AGPL AGPL3 Artistic2.0 CCPL CDDL CPL EPL FDL FDL1.2 FDL1.3 GPL GPL2 GPL3 LGPL LGPL2.1 LGPL3 LPPL MPL PerlArtistic PHP PSF RUBY W3C ZPL zsync BSD MIT Python zlib/libpng)
 		readonly ROVALIDLICENSES=(Apache APACHE)
