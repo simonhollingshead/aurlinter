@@ -1,0 +1,485 @@
+#!/bin/bash
+
+##################################
+# TODOS
+##################################
+#
+# CCPL license expression (ccpl:by-sa?)
+# .asc and .sig files without SKIP hash.
+# local files with hashes that don't match.
+# Scope to make dependency checking stronger (dependencies of other dependencies)
+# Check non-depends to ensure no duplication of depends.
+# Executables in AUR source archives (?)
+# Package has zero sources.
+# Package has zero non-local sources (but some local ones).
+# Packages with ONLY ARM architectures.
+# Check all arrays aren't duplicating any data.
+#
+# For bad packages, three extra messages:
+# - This package is an orphan
+# - This package is over a year old
+# - This package has <=5 // >=100 votes
+#
+##################################
+
+source config
+
+readonly REGEXVALIDPKGNAME="[0-9a-zA-Z@._+][0-9a-zA-Z@._+-]*"
+readonly REGEXVALIDCOMPARATOR="(>|<|<=|>=|=)?"
+readonly REGEXVALIDPKGVER="[A-Za-z0-9._]+"
+readonly REGEXVALIDPKGREL="[0-9]+"
+readonly REGEXVALIDEPOCH="[0-9]+"
+
+inarray() {
+	local insensitive=$1 n=$2 h
+	shift 2
+	$insensitive && shopt -s nocasematch
+	for h
+	do
+		[[ $n = "$h" ]] || continue
+		$insensitive && shopt -u nocasematch
+		return 0
+	done
+	shopt -u nocasematch
+	return 1
+}
+
+insuffixarray() {
+	local insensitive=$1 n=$2 h
+	shift 2
+	$insensitive && shopt -s nocasematch
+	for h
+	do
+		[[ $n = *"$h" ]] || continue
+		$insensitive && shopt -u nocasematch
+		return 0
+	done
+	shopt -u nocasematch
+	return 1
+}
+
+dep_wellformatted() {
+	$1 && [[ "$2" =~ ^$REGEXVALIDPKGNAME($REGEXVALIDCOMPARATOR($REGEXVALIDEPOCH:)?$REGEXVALIDPKGVER(-$REGEXVALIDPKGREL)?)?$ ]] && return 0
+	! $1 && [[ "$2" =~ ^$REGEXVALIDPKGNAME$ ]] && return 0
+	local TYPE=$($1 && echo "dependency" || echo "unversioned package reference")
+	echo "[*] Bad $TYPE.  ($2)" && return 1
+}
+
+dep_canbesatisfied() {
+	local OK=false REQDVERSION="${1##*[=><]}";
+	if [[ "$REQDVERSION" != "$1" ]]; then
+		local PACKAGENAME="${1%%[=><]*}"
+		grep -ql "^$PACKAGENAME$" ./"$RESULTDIR"/splitpkgslist && break
+		local ALLPKGS=$(grep -h "^$PACKAGENAME=" ./"$RESULTDIR"/tmp_allpkgnames ./"$RESULTDIR"/pkgslist)
+		while read line
+		do
+			local VERCMP=$(vercmp "$REQDVERSION" "${line##*=}")
+			{ { [[ "$VERCMP" == 1 ]] && [[ "$1" == *"<"* ]]; } || { [[ "$VERCMP" == 0 ]] && [[ "$1" == *"="* ]]; } || { [[ "$VERCMP" == -1 ]] && [[ "$1" == *">"* ]]; }; } && OK=true && break
+		done <<< "$ALLPKGS"
+		$OK || echo "[*] Could not find any package that provided $1."
+	else
+		grep -ql "^$1$\|^$1=" ./"$RESULTDIR"/tmp_allpkgnames ./"$RESULTDIR"/pkgslist ./"$RESULTDIR"/splitpkgslist || echo "[*] Could not find any package that provided $1."
+	fi
+}
+
+dep_notinbasedevel() {
+	local PACKAGENAME="${1%%[=><]*}" REQDVERSION="${1##*[=><]}"
+	[[ "$REQDVERSION" == "$1" ]] && grep -ql "^$PACKAGENAME$\|^$PACKAGENAME=" ./"$RESULTDIR"/tmp_basedevel && { ! [[ "$ROVERBOSITY" -gt 2 ]] || echo "[*] Base-devel already contains $1."; } && return
+	[[ "$REQDVERSION" != "$1" ]] && local VERCMP && grep "^$PACKAGENAME=" ./"$RESULTDIR"/tmp_basedevel | sed "s/*=//" | while read line
+	do
+		VERCMP=$(vercmp "$REQDVERSION" "${line##*=}")
+		{ { [[ "$VERCMP" == 1 ]] && [[ "$1" == *"<"* ]]; } || { [[ "$VERCMP" == 0 ]] && [[ "$1" == *"="* ]]; } || { [[ "$VERCMP" == -1 ]] && [[ "$1" == *">"* ]]; }; } && { ! [[ "$ROVERBOSITY" -gt 2 ]] || echo "[*] Packages from base-devel already satisfy $1."; } && break
+	done
+}
+
+dep_nottoolong() {
+	local DESC="${1#*:}"
+	[[ "$DESC" != "$1" ]] && [[ "${#DESC}" -gt 150 ]] && echo "[*] Optional dependency description excessively long:" && echo "$1"
+}
+
+validate_vcs_suffix() {
+	local SOURCEENTRY PREFIX=false FRAGMENT=true RETURNMSG="" VCSTYPE="${PKGBUILDIDENTIFIER##*-}"
+	inarray false "$VCSTYPE" "${!ROVCSTYPES[@]}" || return
+	inarray false "${ROVCSTYPES[$VCSTYPE]}" "${makedepends[@]}" || RETURNMSG="$RETURNMSG  Failed to declare makedepend on ${ROVCSTYPES[$VCSTYPE]}."
+	for SOURCEENTRY in "${source[@]}"
+	do
+		SOURCEENTRY="${SOURCEENTRY#*::}"
+		{ [[ "$SOURCEENTRY" == "$VCSTYPE://"* ]] || [[ "$SOURCEENTRY" == "$VCSTYPE+"* ]]; } && PREFIX=true && { [[ "${SOURCEENTRY##*#}" == "$SOURCEENTRY" ]] || { [[ "${SOURCEENTRY##*#}" != "revision="* ]] && [[ "${SOURCEENTRY##*#}" != "tag="* ]]; }; } && FRAGMENT=false; ! $FRAGMENT && $PREFIX && break
+	done
+	! $PREFIX && RETURNMSG="$RETURNMSG  No VCS source array entry found."
+	$PREFIX && $FRAGMENT && RETURNMSG="$RETURNMSG  Only VCS sources found specified a revision rather than tracking the repository."
+	[[ "$RETURNMSG" != "" ]] && echo "[*] Bad VCS package:$RETURNMSG"
+}
+
+validate_pkgname() {
+	local NAME && for NAME in "${pkgname[@]}" "${pkgbase[@]}"
+	do
+		[[ "$NAME" =~ ^$REGEXVALIDPKGNAME$ ]] || echo "[*] Package name contains characters outside the permitted range.  ($NAME)"
+	done
+	validate_vcs_suffix
+	[[ "$ROVERBOSITY" -ge 4 ]] && { [[ "$ARCHIVENAME" != "$INNERFOLDER" ]] || [[ "$PKGBUILDIDENTIFIER" != "$INNERFOLDER" ]]; } && echo "[*] Archive name $ARCHIVENAME, the directory inside $INNERFOLDER, and the package name $PKGBUILDIDENTIFIER do not match."
+}
+
+validate_pkgver() {
+	[[ "$pkgver" =~ ^$REGEXVALIDPKGVER$ ]] || echo "[*] Disallowed pkgver format.  ($pkgver)";
+}
+
+validate_pkgrel() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && { [[ "$pkgrel" =~ ^$REGEXVALIDPKGREL$ ]] || echo "[*] Non-integer or negative pkgrel.  ($pkgrel)"; }
+}
+
+validate_pkgdesc() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && [[ "$pkgdesc" =~ (^|[^a-zA-Z])"$PKGBUILDIDENTIFIER"([^a-zA-Z]|$) ]] && echo "[*] Found package name inside pkgdesc. ($PKGBUILDIDENTIFIER)"
+	{ { [[ "$ROVERBOSITY" == 3 ]] && [[ ${#pkgdesc} -gt 150 ]]; } || { [[ "$ROVERBOSITY" == 4 ]] && [[ ${#pkgdesc} -gt 115 ]]; } || { [[ "$ROVERBOSITY" -ge 5 ]] && [[ ${#pkgdesc} -gt 80 ]]; } } && echo "[*] Excessively long pkgdesc. (${#pkgdesc} chars)"
+}
+
+validate_url() {
+	grep -qxFf <(echo "$url" | sed "\|://|!d;s|/$||") "./$RESULTDIR/urllist" && echo "[*] Could not connect to address in url field.  ($url)"
+}
+
+validate_arch() {
+	[[ "$ROVERBOSITY" -ge 2 ]] && local ARCHITECTURENAME && for ARCHITECTURENAME in "${arch[@]}"
+	do
+		inarray false "$ARCHITECTURENAME" "${ROVALIDARCHES[@]}" || echo "[*] Architecture not recognised.  ($ARCHITECTURENAME)"
+	done
+}
+
+validate_license() {
+	[[ "$ROVERBOSITY" -ge 4 ]] && local LICENSENAME && for LICENSENAME in "${license[@]}"
+	do
+		[[ "$LICENSENAME" == "custom" ]] || { [[ "$LICENSENAME" == "custom:"?* ]] && { ! inarray true "${LICENSENAME#custom:}" "${ROVALIDILICENSES[@]}" && ! inarray false "${LICENSENAME#custom:}" "${ROVALIDLICENSES[@]}"; }; } || inarray true "$LICENSENAME" "${ROVALIDILICENSES[@]}" || inarray false "$LICENSENAME" "${ROVALIDLICENSES[@]}" || echo "[*] Bad license name.  ($LICENSENAME)"
+	done
+}
+
+validate_pkgdir() {
+	[[ "$pkgdir" != "" ]] && echo "[*] Sets pkgdir.  (To $pkgdir)"
+}
+
+validate_srcdir() {
+	[[ "$srcdir" != "" ]] && echo "[*] Sets srcdir.  (To $srcdir)"
+}
+
+validate_startdir() {
+	[[ "$startdir" != "" ]] && echo "[*] Sets startdir.  (To $startdir)"
+}
+
+validate_epoch() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && { [[ "$epoch" =~ ^$REGEXVALIDEPOCH$ ]] || echo "[*] Non-integer or negative epoch.  ($epoch)"; }
+}
+
+validate_pkgbase() {
+	return # Handled by pkgname where needed.
+}
+
+validate_groups() {
+	[[ "$ROVERBOSITY" -ge 5 ]] && [[ $(IFS=""; echo "${groups}[@]") != "" ]] && echo "[*] AUR packages gain no benefit from having a defined group."
+}
+
+validate_install() {
+	[[ $install != "" ]] && [ ! -f "./$DLDIR/$EXTDIR/$ARCHIVENAME/$INNERFOLDER/$install" ] && echo "[*] Install file not found in archive.  ($install)"
+}
+
+validate_changelog() {
+	[[ "$changelog" != "" ]] && [ ! -f "./$DLDIR/$EXTDIR/$ARCHIVENAME/$INNERFOLDER/$changelog" ] && "[*] Changelog file not found in archive.  ($changelog)"
+}
+
+validate_depends() {
+	local DEPENDENCYLINE && for DEPENDENCYLINE in "${depends[@]}"
+	do
+		dep_wellformatted true "$DEPENDENCYLINE" && dep_canbesatisfied "$DEPENDENCYLINE"
+	done
+}
+
+validate_makedepends() {
+	local DEPENDENCYLINE && for DEPENDENCYLINE in "${makedepends[@]}"
+	do
+		dep_wellformatted true "$DEPENDENCYLINE" && dep_notinbasedevel "$DEPENDENCYLINE" && dep_canbesatisfied "$DEPENDENCYLINE"
+	done
+}
+
+validate_checkdepends() {
+	[[ "${#checkdepends[@]}" != 0 ]] && ! declare -p pkgbuildfunction_check >/dev/null 2>&1 && echo "[*] Contains checkdepends but no check function." && return
+	local DEPENDENCYLINE && for DEPENDENCYLINE in "${checkdepends[@]}"
+	do
+		dep_wellformatted true "$DEPENDENCYLINE" && dep_notinbasedevel "$DEPENDENCYLINE" && dep_canbesatisfied "$DEPENDENCYLINE"
+	done
+}
+
+validate_optdepends() {
+	local DEPENDENCYLINE && for DEPENDENCYLINE in "${optdepends[@]}"
+	do
+		dep_wellformatted false "${DEPENDENCYLINE%%:*}" && dep_notinbasedevel "${DEPENDENCYLINE%%:*}" && dep_canbesatisfied "${DEPENDENCYLINE%%:*}" && [[ "$ROVERBOSITY" -ge 5 ]] && dep_nottoolong "$DEPENDENCYLINE"
+	done
+}
+
+validate_conflicts() {
+	local DEPENDENCYLINE && for DEPENDENCYLINE in "${conflicts[@]}"
+	do
+		dep_wellformatted false "$DEPENDENCYLINE" && dep_canbesatisfied "$DEPENDENCYLINE"
+	done
+}
+
+validate_replaces() {
+	local DEPENDENCYLINE && for DEPENDENCYLINE in "${replaces[@]}"
+	do
+		dep_wellformatted false "$DEPENDENCYLINE"
+	done
+}
+
+validate_provides() {
+	local PROVIDEDPACKAGE && for PROVIDEDPACKAGE in "${provides[@]}"
+	do
+		[[ "$PROVIDEDPACKAGE" =~ ^$REGEXVALIDPKGNAME(=($REGEXVALIDEPOCH:)?$REGEXVALIDPKGVER(-$REGEXVALIDPKGREL)?)?$ ]] || { echo "[*] Invalid provides declaration ($PROVIDEDPACKAGE)" && continue; }
+		[[ "$ROVERBOSITY" -ge 3 ]] && [[ "${PROVIDEDPACKAGE%%=*}" == "$PKGBUILDIDENTIFIER" ]] && echo "[*] Package provides itself."
+	done
+}
+
+validate_backup() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && { local BACKUPFILE ABSOLUTE=false && for BACKUPFILE in "${backup[@]}"
+	do
+		[[ "$BACKUPFILE" == "/"* ]] && ABSOLUTE=true
+		[[ "$ROVERBOSITY" -ge 5 ]] && [[ "${BACKUPFILE#/}" != "etc/"* ]] && [[ ! "${BACKUPFILE##*/}" =~ (cfg|conf) ]] && echo "[*] Potentially unneeded backup of $BACKUPFILE"
+	done
+	$ABSOLUTE && echo "[*] Absolute filepaths found in backup array."; }
+}
+
+validate_options() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && local OPTIONNAME && for OPTIONNAME in "${options[@]}"
+	do
+		{ [[ $OPTIONNAME == "" ]] || inarray false "${OPTIONNAME#!}" "${ROVALIDOPTIONS[@]}"; } || echo "[*] Unknown option.  ($OPTIONNAME)"
+	done
+}
+
+validate_source() {
+	local SOURCEPATH URLLIST=() COMPARETO && for SOURCEPATH in "${source[@]}"
+	do
+		[[ "$SOURCEPATH" == *"://"* ]] && URLLIST+=("$SOURCEPATH") && continue
+		[[ ! -f "./$DLDIR/$EXTDIR/$ARCHIVENAME/$INNERFOLDER/$SOURCEPATH" ]] && echo "[*] Source entry $SOURCEPATH not found in the archive."
+		[[ "$ROVERBOSITY" -ge 4 ]] && [[ "$SOURCEPATH" == *".install" ]] && echo "[*] Install file should not be declared in the source array."
+	done
+	COMPARETO=$(IFS=$'\n'; grep -Fxf <(echo "${URLLIST[*]}" | sed "s|::|\n|;s|^.*\n||;s|/$||") "./$RESULTDIR/urllist"); [[ "$COMPARETO" != "" ]] && echo "[*] Could not connect to the following sources:" && echo "$COMPARETO"
+}
+
+validate_noextract() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && local NOEXTRACTFILE SOURCEFILE FOUND && for NOEXTRACTFILE in "${noextract[@]}"
+	do
+		FOUND=false
+		for SOURCEFILE in "${source[@]}"
+		do
+			SOURCEFILE="${SOURCEFILE%%::*}"
+			SOURCEFILE="${SOURCEFILE##*/}"
+			[[ "$SOURCEFILE" == "$NOEXTRACTFILE" ]] && FOUND=true && break
+		done
+		$FOUND || echo "[*] Told not to extract a file, $NOEXTRACTFILE, that was not found in the source array."
+	done
+}
+
+validate_md5sums() {
+	[[ "${#md5sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local MD5SUM && for MD5SUM in "${md5sums[@]}"
+	do
+		{ [[ "$MD5SUM" == "SKIP" ]] || [[ "$MD5SUM" =~ ^[0-9a-fA-F]{32}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed md5sum.  ($MD5SUM)"
+	done
+}
+
+validate_sha1sums() {
+	[[ "${#sha1sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA1SUM && for SHA1SUM in "${sha1sums[@]}"
+	do
+		{ [[ "$SHA1SUM" == "SKIP" ]] || [[ "$SHA1SUM" =~ ^[0-9a-fA-F]{40}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha1sum.  ($SHA1SUM)"
+	done
+}
+
+validate_sha256sums() {
+	[[ "${#sha256sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA256SUM && for SHA256SUM in "${sha256sums[@]}"
+	do
+		{ [[ "$SHA256SUM" == "SKIP" ]] || [[ "$SHA256SUM" =~ ^[0-9a-fA-F]{64}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha256sum.  ($SHA256SUM)"
+	done
+}
+
+validate_sha384sums() {
+	[[ "${#sha384sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA384SUM && for SHA384SUM in "${sha384sums[@]}"
+	do
+		{ [[ "$SHA384SUM" == "SKIP" ]] || [[ "$SHA384SUM" =~ ^[0-9a-fA-F]{96}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha384sum.  ($SHA384SUM)"
+	done
+}
+
+validate_sha512sums() {
+	[[ "${#sha512sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA512SUM && for SHA512SUM in "${sha512sums[@]}"
+	do
+		{ [[ "$SHA512SUM" == "SKIP" ]] || [[ "$SHA512SUM" =~ ^[0-9a-fA-F]{128}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha512sum.  ($SHA512SUM)"
+	done
+}
+
+validate_ARCHIVENAME() {
+	return # pkgname handles this.
+}
+
+validate_INNERFOLDER() {
+	return # pkgname handles this.
+}
+
+validate_STDOUT() {
+	[[ "$ROVERBOSITY" -ge 2 ]] && echo "[*] Wrote to stdout during sourcing:" && echo "$STDOUT"
+}
+
+validate_STDERR() {
+	echo "[*] Wrote to stderr during sourcing:" && echo "$STDERR"
+}
+
+validate_PKGEXT() {
+	insuffixarray false "$PKGEXT" "${ROVALIDPKGEXTS[@]}" || echo "[*] Unknown forced PKGEXT value.  ($PKGEXT)"
+}
+
+validate_CARCH() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Changes CARCH.  ($CARCH)"
+}
+
+validate_CFLAGS() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set cflags.  ($CFLAGS)"
+}
+
+validate_CHOST() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Changes CHOST.  ($CHOST)"
+}
+
+validate_CPPFLAGS() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set cppflags.  ($CPPFLAGS)"
+}
+
+validate_CXXFLAGS() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set cxxflags.  ($CXXFLAGS)"
+}
+
+validate_DEBUG_CFLAGS() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set debug cflags.  ($DEBUG_CFLAGS)"
+}
+
+validate_DEBUG_CXXFLAGS() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set debug cxxflags.  ($DEBUG_CXXFLAGS)"
+}
+
+validate_LDFLAGS() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set ldflags.  ($LDFLAGS)"
+}
+
+validate_MAKEFLAGS() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set makeflags.  ($MAKEFLAGS)"
+}
+
+validate_MAKEOPTS() {
+	[[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] Modifies user-set makeopts.  ($MAKEOPTS)"
+}
+
+validate_DLAGENTS() {
+	local DLAGENT && for DLAGENT in "${DLAGENTS[@]}"
+	do
+		DLAGENT="${DLAGENT%%::*}"
+		inarray false "$DLAGENT" "${RODEFAULTDLAGENTS[@]}" && echo "[*] Redefines default DLAGENT for $DLAGENT." || { [[ "$ROVERBOSITY" -ge 5 ]] && echo "[*] Defines DLAGENT for $DLAGENT"; }
+	done
+}
+
+validate_archivefiles() {
+	local NUMDIRS=$(find ./$DLDIR/$EXTDIR/$ARCHIVENAME/ -mindepth 1 -maxdepth 1 -type d | wc -l)
+	[[ "$NUMDIRS" != 1 ]] && echo "[*] There should be exactly 1 directory in root of the tarball, found $NUMDIRS."
+	pushd "./$DLDIR/$EXTDIR/$ARCHIVENAME/$INNERFOLDER" >/dev/null
+	while read line
+	do
+		line="${line#./}"
+		[[ "$line" == "PKGBUILD" ]] || inarray false "$line" "${source[@]}" || [[ "$line" == "$install" ]] || [[ "$line" == "$changelog" ]] || echo "[*] File not declared used in PKGBUILD.  ($line)"
+	done < <(find . -type f)
+	popd >/dev/null
+}
+
+validate_disgustingstrings() {
+local FUNCTIONNAME && for FUNCTIONNAME in "${PKGBUILDFUNCTIONS[@]}"
+	do
+		FUNCTIONCONTENT="${!FUNCTIONNAME}"
+		grep -wq "sudo" <<< "$FUNCTIONCONTENT" && echo "[*] Found using sudo within ${FUNCTIONNAME#pkgbuildfunction_}()."
+		tr "\n" " " <<< "$FUNCTIONCONTENT" | grep -Eq "\|\|[[:space:]]*return" && echo "[*] Found using || return within ${FUNCTIONNAME#pkgbuildfunction_}()."
+		[[ "$ROVERBOSITY" -ge 3 ]] && tr "\n" " " <<< "$FUNCTIONCONTENT" | grep -Eq "(\$|\{)startdir[^A-Za-z0-9_]" && echo "[*] Appears to rely on startdir, which is deprecated, in ${FUNCTIONNAME#pkgbuildfunction_}()."
+		[[ "$ROVERBOSITY" -ge 5 ]] && tr "\n" " " <<< "$FUNCTIONCONTENT" | grep -Eq "[[:space:]](CARCH|CFLAGS|CHOST|CPPFLAGS|CXXFLAGS|DEBUG_CFLAGS|DEBUG_CXXFLAGS|LDFLAGS|MAKEFLAGS|MAKEOPTS)+?=" && echo "[*] Found setting one of the many sets of build flags.  Check if it is still needed in ${FUNCTIONNAME#pkgbuildfunction_}()."
+	done
+}
+
+validate_package_function() {
+	compgen -v | grep -ql "^pkgbuildfunction_package$\|^pkgbuildfunction_package_" || echo "[*] PKGBUILD has no package() function."
+}
+
+INPUT=( $2 )
+for PACKAGE in "${INPUT[@]}"
+do
+	FILENAME="${PACKAGE##*/}"
+	APPLICABLEARCHES="${FILENAME##*-}"
+
+	RESULT=$(
+		readonly ROVALIDARCHES=(any x86_64 i686 arm armv6h armv7h) # Order these with most popular first, since inarray ends early in such cases.
+		readonly ROVALIDOPTIONS=(strip docs libtool staticlibs emptydirs zipman purge upx debug ccache distcc buildflags makeflags)
+		readonly ROVALIDILICENSES=(AGPL AGPL3 Artistic2.0 CCPL CDDL CPL EPL FDL FDL1.2 FDL1.3 GPL GPL2 GPL3 LGPL LGPL2.1 LGPL3 LPPL MPL PerlArtistic PHP PSF RUBY W3C ZPL zsync BSD MIT Python zlib/libpng)
+		readonly ROVALIDLICENSES=(Apache APACHE)
+		readonly ROVALIDPKGEXTS=(tar.gz tar.bz2 tar.xz tar.lrz tar.lzo tar.Z tar)
+		readonly RODEFAULTDLAGENTS=(http https ftp rsync scp)
+		declare -Ar ROVCSTYPES=([svn]=subversion [bzr]=bzr [git]=git [hg]=mercurial)
+		# End of array markers below for iteration assistance.
+		ROALLPKGFIELDS=(pkgname) # Special case.  Required string-or-array.
+		ROALLPKGFIELDS+=(pkgdesc pkgrel pkgver url -) # REQUIRED STRINGS
+		ROALLPKGFIELDS+=(arch license --) # REQUIRED ARRAYS
+		ROALLPKGFIELDS+=(changelog epoch install pkgbase pkgdir srcdir startdir PKGEXT MAKEFLAGS MAKEOPTS DEBUG_CFLAGS DEBUG_CXXFLAGS CARCH LDFLAGS CFLAGS CPPFLAGS CXXFLAGS CHOST STDOUT STDERR ARCHIVENAME INNERFOLDER ---) # OTHER STRINGS
+		ROALLPKGFIELDS+=(backup checkdepends conflicts depends groups makedepends md5sums noextract optdepends options provides replaces sha1sums sha256sums sha384sums sha512sums source DLAGENTS) # OTHER ARRAYS
+		readonly ROALLPKGFIELDS
+
+		readonly ROVERBOSITY="$1"
+
+		source "$PACKAGE" 2>/dev/null
+		grep -ql $'\r' <(declare -p) && echo "[o] $ARCHIVENAME ($APPLICABLEARCHES)" && echo "The PKGBUILD in this archive contained CRLF line endings, which makepkg will refuse to source.  Aborted." && exit
+		PKGBUILDIDENTIFIER=$({ [[ "${#pkgname[*]}" -gt 1 ]] && [[ "$pkgbase" != "" ]] && echo $pkgbase; } || echo "$pkgname")
+		echo "[o] $PKGBUILDIDENTIFIER ($APPLICABLEARCHES)"
+		
+		if [[ "$ROVERBOSITY" -ge 3 ]]; then
+			PKGBUILDFUNCTIONS=()
+			ALLSETVARS=($(sed "/^_/d;s/=.*//" "$PACKAGE"))
+			for SETVARIABLE in "${ALLSETVARS[@]}"
+			do
+				[[ "$SETVARIABLE" =~ ^pkgbuildfunction_ ]] && PKGBUILDFUNCTIONS+=("$SETVARIABLE") && continue
+				{ ! [[ "$SETVARIABLE" =~ -+ ]] && inarray false "$SETVARIABLE" "${ROALLPKGFIELDS[@]}"; } || echo "[*] Unknown non-underscored variable set with name $SETVARIABLE."
+			done
+		fi
+
+		REQUIREDFIELD=true
+		ISSTRING=true
+		NUMSUMS=0
+		NUMSUMTYPES=0
+		for PKGBUILDFIELD in "${ROALLPKGFIELDS[@]}"
+		do
+			$REQUIREDFIELD && [[ "$PKGBUILDFIELD" == "-" ]] && ISSTRING=false && continue
+			$REQUIREDFIELD && [[ "$PKGBUILDFIELD" == "--" ]] && REQUIREDFIELD=false && ISSTRING=true && continue
+			[[ "$PKGBUILDFIELD" == "---" ]] && ISSTRING=false && continue
+			VARIABLETYPE=$(declare -p "$PKGBUILDFIELD" 2>/dev/null | cut -d " " -f 2)
+			if [[ "$VARIABLETYPE" != "" ]]; then
+				if [[ "$PKGBUILDFIELD" == "pkgname" ]]; then
+					# Special case, can be both.
+					[[ "${pkgname[*]}" =~ ^[\ ]*$ ]] && echo "[*] Essential field $PKGBUILDFIELD has been left blank."
+					validate_pkgname
+				elif $ISSTRING && [[ "$VARIABLETYPE" =~ ^[^Aa]+$ ]]; then
+					$REQUIREDFIELD && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] Essential field $PKGBUILDFIELD has been left blank."
+					validate_$PKGBUILDFIELD
+				elif ! $ISSTRING && [[ "$VARIABLETYPE" == *[Aa]* ]]; then
+					$REQUIREDFIELD && TMPVAR="$PKGBUILDFIELD""[@]" && [[ "${!TMPVAR}" == "" ]] && echo "[*] Essential field $PKGBUILDFIELD has been left blank."
+					validate_$PKGBUILDFIELD
+				else
+					$ISSTRING && echo "[*] Skipping $PKGBUILDFIELD.  Should be a string but was an array." || echo "[*] Skipping $PKGBUILDFIELD.  Should be an array but was a string."
+				fi
+			fi
+		done
+
+		[[ "$NUMSUMS" != "${#source[@]}" ]] && echo "[*] Number of hashes ($NUMSUMS) does not match number of entries in the source array (${#source[@]})."
+		[[ "$NUMSUMTYPES" -gt 1 ]] && echo "[*] More than one type of hash is used to describe the source array ($NUMSUMTYPES)."
+
+		validate_archivefiles
+		[[ "$ROVERBOSITY" -ge 2 ]] && validate_package_function
+		[[ "$ROVERBOSITY" -ge 2 ]] && validate_disgustingstrings
+
+		exit 0
+	)
+	[[ $? == 1 ]] && RESULT="Aborting: Could not load data, likely due to use of an associative array."
+	
+	[[ "$RESULT" == *$'\n'* ]] && echo "$RESULT" && echo
+done
