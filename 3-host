@@ -16,7 +16,7 @@ coalesce() {
 }
 
 urlcheck() {
-	SHELL=/usr/bin/bash parallel -N 50 -j50 './3.3-urlcheck "{}"' :::: ./res/urllist >res/goodurls 2>res/faillog
+	SHELL=/usr/bin/bash parallel -N 50 -j 50 './3.3-urlcheck "{}"' :::: ./res/urllist >res/goodurls 2>res/faillog
 }
 
 genreport() {
@@ -29,10 +29,10 @@ REPORTHEADER
 	echo "==========================================================[Extraction]"
 	cat res/extractbugs
 
-	if [[ "$VERBOSITY" -ge 3 ]]; then
+	if [[ "$VERBOSITY" -ge 2 ]]; then
 		echo
 		echo "========================================[Executable files in archive]"
-		if [[ "$VERBOSITY" -ge 5 ]]; then
+		if [[ "$VERBOSITY" -ge 4 ]]; then
 			cat res/executablebugs
 		else
 			sed 's|[^ ]* ./||;s|/|\n|; s|\n.*||' "./res/executablebugs" | sort | uniq
@@ -81,9 +81,7 @@ REPORTHEADER
 	expac -Sg '%n' base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk '{print $1;}' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' | SHELL=/usr/bin/bash parallel -j8 'expac -S1 "%n=%v  %P" {} | sed "s/  /\n/g" | grep -v "\.so=\|\.so$\|^$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > ./"$RESULTDIR"/tmp_basedevel
 	expac -S "%n=%v  %P" | sed 's/  /\n/g' > ./"$RESULTDIR"/tmp_allpkgnames
 	# Regular expressions below with a character count have to be written {number\} otherwise parallel understands it as the {n} option.  \{\} is interpreted as \{} instead.
-	find ./"$RESULTDIR"/sourced -type f | sort | SHELL=/usr/bin/bash parallel -k -N 5 -j8 '
-		./3.4-validate '"$VERBOSITY"' "{}"
-	'
+	find ./"$RESULTDIR"/sourced -type f | sort | SHELL=/usr/bin/bash parallel -k -N 20 -j8 './3.4-validate '"$VERBOSITY"' {}'
 	rm ./"$RESULTDIR"/{tmp_basedevel,tmp_allpkgnames}
 }
 
@@ -97,10 +95,10 @@ while getopts "v" OPTION; do
 done
 [[ "$VERBOSITY" == "0" ]] && VERBOSITY=1
 
-# prep
-# coalesce
-# urlcheck
-# coalesce
-# urlcheck
-# coalesce
+#prep
+#coalesce
+#urlcheck
+#coalesce
+#urlcheck
+#coalesce
 genreport

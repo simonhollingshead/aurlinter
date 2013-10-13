@@ -11,7 +11,8 @@ update() {
 }
 
 sync() {
-	rsync -am --include='*/PKGBUILD' --include='*/' --exclude='*' "$VMHOSTPATH"/"$DLDIR"/ext "$VMWORKDIR"
+	# FIXME: This doesn't delete from the right hand side when left disappears.
+	rsync -am --delete --include='*/PKGBUILD' --include='*/' --exclude='*' "$VMHOSTPATH"/"$DLDIR"/ext "$VMWORKDIR"
 }
 
 sourceall() {
@@ -42,5 +43,5 @@ archiveresults() {
 
 # update
 # sync
-sourceall
-archiveresults
+# sourceall
+# archiveresults
