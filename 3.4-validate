@@ -8,8 +8,11 @@
 # Check non-depends to ensure no duplication of depends.
 # Check all arrays aren't duplicating any data.
 # VCS source but non-vcs package.
+# Check pkgname without VCS suffix.
 # More detailed analysis of backup array.
 # Full version number in pkgname.
+# The package has been flagged for over X weeks.
+# Version >= 0 when no version is therefore needed.
 #
 # For bad packages, three extra messages:
 # - This package is an orphan
@@ -20,9 +23,9 @@
 
 source config
 
-readonly REGEXVALIDPKGNAME="[0-9a-zA-Z@._+][0-9a-zA-Z@._+-]*"
+readonly REGEXVALIDPKGNAME="[0-9a-zA-Z@_+][0-9a-zA-Z@._+-]*"
 readonly REGEXVALIDCOMPARATOR="([<>]=?|=)"
-readonly REGEXVALIDPKGVER="[A-Za-z0-9._]+"
+readonly REGEXVALIDPKGVER="[^:-]+"
 readonly REGEXVALIDPKGREL="[0-9]+"
 readonly REGEXVALIDEPOCH="[0-9]+"
 
@@ -96,7 +99,7 @@ dep_nottoolong() {
 validate_vcs_suffix() {
 	local SOURCEENTRY PREFIX=false FRAGMENT=true RETURNMSG="" VCSTYPE="${PKGBUILDIDENTIFIER##*-}"
 	inarray false "$VCSTYPE" "${!ROVCSTYPES[@]}" || return
-	inarray false "${ROVCSTYPES[$VCSTYPE]}" "${makedepends[@]}" || RETURNMSG="$RETURNMSG  Failed to declare makedepend on ${ROVCSTYPES[$VCSTYPE]}."
+	inarray false "${ROVCSTYPES[$VCSTYPE]}" "${makedepends[@]}" || inarray false "${ROVCSTYPES[$VCSTYPE]}" "${depends[@]}" || RETURNMSG="$RETURNMSG  Failed to declare makedepend on ${ROVCSTYPES[$VCSTYPE]}."
 	for SOURCEENTRY in "${source[@]}"
 	do
 		SOURCEENTRY="${SOURCEENTRY#*::}"
@@ -134,7 +137,7 @@ validate_url() {
 }
 
 validate_arch() {
-	[[ "$ROVERBOSITY" -ge 2 ]] && local ARCHITECTURENAME OFFICIALARCH=false ANYEXCESS=false && for ARCHITECTURENAME in "${arch[@]}"
+	local ARCHITECTURENAME OFFICIALARCH=false ANYEXCESS=false && for ARCHITECTURENAME in "${arch[@]}"
 	do
 		[[ "$ARCHITECTURENAME" == "any" ]] && OFFICIALARCH=true && { [[ ${#arch[@]} == 1 ]] || ANYEXCESS=true; } && break
 		inarray false "$ARCHITECTURENAME" "${ROOFFICIALARCHES[@]}" && OFFICIALARCH=true && continue
@@ -142,7 +145,7 @@ validate_arch() {
 		echo "[*] Architecture not recognised.  ($ARCHITECTURENAME)"
 	done
 	[[ "$ROVERBOSITY" -ge 2 ]] && $ANYEXCESS && echo "[*] Architecture 'any' was declared, but was not the only architecture in the array."
-	[[ "$ROVERBOSITY" -ge 4 ]] && { $OFFICIALARCH || echo "[*] None of Arch's official architectures (${ROOFFICIALARCHES[@]}) were used.  (${arch[@]})"; }
+	[[ "$ROVERBOSITY" -ge 4 ]] && ! $OFFICIALARCH && OLDIFS="$IFS" && IFS="," && echo "[*] None of Arch's official architectures (${ROOFFICIALARCHES[*]}) were used.  (${arch[*]})" && IFS="$OLDIFS"
 }
 
 validate_license() {
@@ -282,7 +285,7 @@ validate_source() {
 			LOCALINSTALL=true
 		fi
 	done
-	! $LOCALINSTALL && [[ "${#URLLIST[@]}" == 0 ]] && echo "[*] Package only uses files from the source archive." && return 
+	[[ "$ROVERBOSITY" -ge 4 ]] && ! $LOCALINSTALL && [[ "${#URLLIST[@]}" == 0 ]] && echo "[*] Package only uses files from the source archive." && return 
 	COMPARETO=$(IFS=$'\n'; grep -Fxf <(echo "${URLLIST[*]}" | sed "s|::|\n|;s|^.*\n||;s|/$||") "./$RESULTDIR/urllist"); [[ "$COMPARETO" != "" ]] && echo "[*] Could not connect to the following sources:" && echo "$COMPARETO"
 }
 
@@ -300,39 +303,38 @@ validate_noextract() {
 	done
 }
 
+validate_anysums() {
+	local TMP1="$1[@]"
+	[[ "$2" == 0 ]] && return
+	if [[ "$2" == "${#source[@]}" ]]; then
+		local SUM
+		for SUM in "${!TMP1}"
+		do
+			[[ "$SUM" == "SKIP" ]] || [[ "$SUM" =~ ^[0-9a-fA-F]{"$3"}$ ]] || echo "[*] Malformed checksum in $1.  ($SUM)"
+		done
+	else
+		echo "[*] The $1 array is a different length ($2) to the source array (${#source[@]})."
+	fi
+}
+
 validate_md5sums() {
-	[[ "${#md5sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local MD5SUM && for MD5SUM in "${md5sums[@]}"
-	do
-		{ [[ "$MD5SUM" == "SKIP" ]] || [[ "$MD5SUM" =~ ^[0-9a-fA-F]{32}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed md5sum.  ($MD5SUM)"
-	done
+	validate_anysums "md5sums" "${#md5sums[@]}" 32
 }
 
 validate_sha1sums() {
-	[[ "${#sha1sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA1SUM && for SHA1SUM in "${sha1sums[@]}"
-	do
-		{ [[ "$SHA1SUM" == "SKIP" ]] || [[ "$SHA1SUM" =~ ^[0-9a-fA-F]{40}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha1sum.  ($SHA1SUM)"
-	done
+	validate_anysums "sha1sums" "${#sha1sums[@]}" 40
 }
 
 validate_sha256sums() {
-	[[ "${#sha256sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA256SUM && for SHA256SUM in "${sha256sums[@]}"
-	do
-		{ [[ "$SHA256SUM" == "SKIP" ]] || [[ "$SHA256SUM" =~ ^[0-9a-fA-F]{64}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha256sum.  ($SHA256SUM)"
-	done
+	validate_anysums "sha256sums" "${#sha256sums[@]}" 64
 }
 
 validate_sha384sums() {
-	[[ "${#sha384sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA384SUM && for SHA384SUM in "${sha384sums[@]}"
-	do
-		{ [[ "$SHA384SUM" == "SKIP" ]] || [[ "$SHA384SUM" =~ ^[0-9a-fA-F]{96}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha384sum.  ($SHA384SUM)"
-	done
+	validate_anysums "sha384sums" "${#sha384sums[@]}" 96
 }
 
 validate_sha512sums() {
-	[[ "${#sha512sums[@]}" != 0 ]] && NUMSUMTYPES=$((NUMSUMTYPES + 1)) && local SHA512SUM && for SHA512SUM in "${sha512sums[@]}"
-	do
-		{ [[ "$SHA512SUM" == "SKIP" ]] || [[ "$SHA512SUM" =~ ^[0-9a-fA-F]{128}$ ]]; } && NUMSUMS=$((NUMSUMS + 1)) || echo "[*] Malformed sha512sum.  ($SHA512SUM)"
-	done
+	validate_anysums "sha512sums" "${#sha512sums[@]}" 128
 }
 
 validate_ARCHIVENAME() {
@@ -421,10 +423,11 @@ local FUNCTIONNAME && for FUNCTIONNAME in "${PKGBUILDFUNCTIONS[@]}"
 		FUNCTIONCONTENT="${!FUNCTIONNAME}"
 		[[ "$FUNCTIONNAME" == "pkgbuildfunction_build" ]] && [[ "$FUNCTIONCONTENT" =~ (\\$|\\{)pkgdir([^A-Za-z0-9_]|$) ]] && echo "[*] Cannot use pkgdir in build()."
 		[[ "$FUNCTIONCONTENT" == *"sudo"* ]] && echo "[*] Found using sudo within ${FUNCTIONNAME#pkgbuildfunction_}()."		
-		[[ "$FUNCTIONCONTENT" =~ (\\$|\\{)startdir([^A-Za-z0-9_]|$) ]] && echo "[*] Appears to rely on startdir, which is deprecated, in ${FUNCTIONNAME#pkgbuildfunction_}()."
-		[[ "$FUNCTIONCONTENT" =~ (\\$|\\{)(srcdir|pkgdir)/\.\.([^A-Za-z0-9_]|$) ]] && echo "[*] Appears to traverse up a directory from the srcdir or pkgdir, in ${FUNCTIONNAME#pkgbuildfunction_}()."
-		[[ "$ROVERBOSITY" -ge 2 ]] && [[ "${FUNCTIONCONTENT//$'n'/ }" =~ \|\|($'\n'|$'\t'|$'\v'|$'\f'|$'\r'| )*return ]] && echo "[*] Found using || return within ${FUNCTIONNAME#pkgbuildfunction_}()."
+		[[ "$FUNCTIONCONTENT" =~ (\$|\{)startdir([^A-Za-z0-9_]|$) ]] && echo "[*] Appears to rely on startdir, which is deprecated, in ${FUNCTIONNAME#pkgbuildfunction_}()."
+		[[ "$FUNCTIONCONTENT" =~ (\$|\{)(srcdir|pkgdir)/\.\.([^A-Za-z0-9_]|$) ]] && echo "[*] Appears to traverse up a directory from the srcdir or pkgdir, in ${FUNCTIONNAME#pkgbuildfunction_}()."
+		[[ "$ROVERBOSITY" -ge 2 ]] && local N=$'\n' && [[ "${FUNCTIONCONTENT//$N/ }" =~ \|\|($'\n'|$'\t'|$'\v'|$'\f'|$'\r'| )*return ]] && echo "[*] Found using || return within ${FUNCTIONNAME#pkgbuildfunction_}()."
 		[[ "$ROVERBOSITY" -ge 2 ]] && local SHEBANG && read -rn 2 SHEBANG < <(cat "./$DLDIR/$EXTDIR/$ARCHIVENAME/$INNERFOLDER/PKGBUILD") && [[ "$SHEBANG" == "#!" ]] && echo "[*] PKGBUILDs should not begin with a shebang.  They will be sourced, not executed."
+		# FIXME: False positive if sed-ing. (, |, whitespace are acceptable. ${CARCH#...?
 		[[ "$ROVERBOSITY" -ge 4 ]] && [[ "$FUNCTIONCONTENT" =~ ([^A-Za-z0-9_]|^)(CARCH|CFLAGS|CHOST|CPPFLAGS|CXXFLAGS|DEBUG_CFLAGS|DEBUG_CXXFLAGS|LDFLAGS|MAKEFLAGS|MAKEOPTS)+?= ]] && echo "[*] Found setting one of the many sets of build flags.  Check if it is still needed in ${FUNCTIONNAME#pkgbuildfunction_}()."
 	done
 }
@@ -445,7 +448,7 @@ do
 		readonly ROOFFICIALARCHES=(any x86_64 i686)
 		readonly ROOTHERARCHES=(arm armv6h armv7h)
 		readonly ROVALIDOPTIONS=(strip docs libtool staticlibs emptydirs zipman purge upx debug ccache distcc buildflags makeflags)
-		readonly ROVALIDILICENSES=(AGPL AGPL3 Artistic2.0 CCPL:by CCPL:by-nc CCPL:by-nc-nd CCPL:by-nc-sa CCPL:by-nd CCPL:by-sa CDDL CPL EPL FDL FDL1.2 FDL1.3 GPL GPL2 GPL3 LGPL LGPL2.1 LGPL3 LPPL MPL PerlArtistic PHP PSF RUBY W3C ZPL zsync BSD MIT Python zlib/libpng)
+		readonly ROVALIDILICENSES=(AGPL AGPL3 Artistic2.0 CCPL:by CCPL:by-nc CCPL:by-nc-nd CCPL:by-nc-sa CCPL:by-nd CCPL:by-sa CDDL CPL EPL FDL FDL1.2 FDL1.3 GPL GPL2 GPL3 LGPL LGPL2.1 LGPL3 LPPL MPL PerlArtistic PHP PSF RUBY W3C ZPL zsync BSD MIT Python ZLIB)
 		readonly ROVALIDLICENSES=(Apache APACHE)
 		readonly ROVALIDPKGEXTS=(tar.gz tar.bz2 tar.xz tar.lrz tar.lzo tar.Z tar)
 		readonly RODEFAULTDLAGENTS=(http https ftp rsync scp)
@@ -463,8 +466,10 @@ do
 
 		source "$PACKAGE" 2>/dev/null
 		grep -ql $'\r' <(declare -p) && echo "[o] $ARCHIVENAME ($APPLICABLEARCHES)" && echo "The PKGBUILD in this archive contained CRLF line endings, which makepkg will refuse to source.  Aborted." && exit
-		PKGBUILDIDENTIFIER=$({ [[ "${#pkgname[*]}" -gt 1 ]] && [[ "$pkgbase" != "" ]] && echo $pkgbase; } || echo "$pkgname")
-		echo "[o] $PKGBUILDIDENTIFIER ($APPLICABLEARCHES)"
+		PKGBUILDIDENTIFIER=$({ [[ "${#pkgname[*]}" -gt 1 ]] && [[ "$pkgbase" != "" ]] && echo "$pkgbase"; } || echo "$pkgname")
+		PKGOWNER=$(awk '$1 == "'"$PKGBUILDIDENTIFIER"'" { print $2 }' $RESULTDIR/pkgowners)
+		PKGOOD=$(awk '$1 == "'"$PKGBUILDIDENTIFIER"'" { if($2 == "yes") print ", flagged" }' $RESULTDIR/pkgood)
+		echo "[o] $PKGBUILDIDENTIFIER ($APPLICABLEARCHES, $PKGOWNER$PKGOOD)"
 		
 		if [[ "$ROVERBOSITY" -ge 2 ]]; then
 			PKGBUILDFUNCTIONS=()
@@ -485,7 +490,7 @@ do
 			$REQUIREDFIELD && [[ "$PKGBUILDFIELD" == "-" ]] && ISSTRING=false && continue
 			$REQUIREDFIELD && [[ "$PKGBUILDFIELD" == "--" ]] && REQUIREDFIELD=false && ISSTRING=true && continue
 			[[ "$PKGBUILDFIELD" == "---" ]] && ISSTRING=false && continue
-			VARIABLETYPE=$(declare -p "$PKGBUILDFIELD" 2>/dev/null | cut -d " " -f 2)
+			VARIABLETYPE=$(declare -p "$PKGBUILDFIELD" 2>/dev/null | head -n 1 | cut -d " " -f 2)
 			if [[ "$VARIABLETYPE" != "" ]]; then
 				if [[ "$PKGBUILDFIELD" == "pkgname" ]]; then
 					# Special case, can be both.
@@ -503,9 +508,6 @@ do
 				fi
 			fi
 		done
-
-		[[ "$NUMSUMS" != "${#source[@]}" ]] && echo "[*] Number of hashes ($NUMSUMS) does not match number of entries in the source array (${#source[@]})."
-		[[ "$NUMSUMTYPES" -gt 1 ]] && echo "[*] More than one type of hash is used to describe the source array ($NUMSUMTYPES)."
 
 		validate_archivefiles
 		validate_package_function

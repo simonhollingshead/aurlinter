@@ -80,20 +80,28 @@ REPORTHEADER
 	echo "=================================================[Main package faults]"
 	expac -Sg '%n' base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk '{print $1;}' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' | SHELL=/usr/bin/bash parallel -j8 'expac -S1 "%n=%v  %P" {} | sed "s/  /\n/g" | grep -v "\.so=\|\.so$\|^$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > ./"$RESULTDIR"/tmp_basedevel
 	expac -S "%n=%v  %P" | sed 's/  /\n/g' > ./"$RESULTDIR"/tmp_allpkgnames
-	# Regular expressions below with a character count have to be written {number\} otherwise parallel understands it as the {n} option.  \{\} is interpreted as \{} instead.
-	find ./"$RESULTDIR"/sourced -type f | sort | SHELL=/usr/bin/bash parallel -k -N 20 -j8 './3.4-validate '"$VERBOSITY"' {}'
+	PKGLIST=$(find ./"$RESULTDIR"/sourced -type f)
+	! $ALLPKGS && PKGSEL=$(grep -Po "^.*(?= $MAINTAINERNAME$)" ./"$RESULTDIR"/pkgowners) && PKGLIST=$(grep -f <(echo "$PKGSEL") <(echo "$PKGLIST"))
+	
+	sort <<< "$PKGLIST" | SHELL=/usr/bin/bash parallel -k -N 20 -j8 './3.4-validate '"$VERBOSITY"' {}'
 	rm ./"$RESULTDIR"/{tmp_basedevel,tmp_allpkgnames}
 }
 
 VERBOSITY=0
-while getopts "v" OPTION; do
+ALLPKGS=true
+while getopts "m:v" OPTION; do
 	case "$OPTION" in
+		m)
+			MAINTAINERNAME="$OPTARG"
+			ALLPKGS=false
+			;;
 		v)
 			VERBOSITY=$((VERBOSITY+1))
 			;;
 	esac	
 done
 [[ "$VERBOSITY" == "0" ]] && VERBOSITY=1
+
 
 #prep
 #coalesce

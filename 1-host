@@ -14,6 +14,14 @@ genpkgs() {
 	rm "$HOSTPATH"/"$DLDIR"/urls
 }
 
+genassoc() {
+	pushd ./"$DLDIR"/gz/ >/dev/null
+	echo *.tar.gz | SHELL=/usr/bin/bash parallel -md ' ' 'IN="{}"; cower --format "%n %m" -i -- ${IN//\.tar\.gz/}' > "$HOSTPATH"/"$RESULTDIR"/pkgowners
+	echo *.tar.gz | SHELL=/usr/bin/bash parallel -md ' ' 'IN="{}"; cower --format "%n %t" -i -- ${IN//\.tar\.gz/}' > "$HOSTPATH"/"$RESULTDIR"/pkgood
+	echo *.tar.gz | SHELL=/usr/bin/bash parallel -md ' ' 'IN="{}"; cower --format "%n %o" -i -- ${IN//\.tar\.gz/}' > "$HOSTPATH"/"$RESULTDIR"/pkgvotes
+	popd >/dev/null
+}
+
 extractpkgs() {
 	# bsdtar is far better with some of the oddball compression tools the maintainers have used.
 	# Blacklisting can just be a grep between 'done' and 'parallel' in the pipeline, e.g. for zipbombs.
@@ -32,11 +40,12 @@ extractpkgs() {
 	pushd ./"$DLDIR"/ext >/dev/null
 
 	find . -type f -executable | SHELL=/usr/bin/bash parallel -m 'stat -c "%A %n" {}' > "$HOSTPATH"/"$RESULTDIR"/executablebugs 
-	find . -type d -maxdepth 2 -mindepth 2 | SHELL=/usr/bin/bash parallel -m 'chmod 755 --preserve-root {}'
+	find . -maxdepth 2 -mindepth 2  -type d | SHELL=/usr/bin/bash parallel -m 'chmod 755 --preserve-root {}'
 	find . -type f ! -perm 644 | SHELL=/usr/bin/bash parallel -m 'chmod 644 --preserve-root {}'
 	popd >/dev/null
 }
 
 #cleanup
 #genpkgs
+#genassoc
 #extractpkgs

@@ -10,9 +10,10 @@ update() {
 	sudo systemd-nspawn -D "$NSPAWN_CONTAINER" /usr/bin/pacman -Syu
 }
 
-sync() {
-	# FIXME: This doesn't delete from the right hand side when left disappears.
-	rsync -am --delete --include='*/PKGBUILD' --include='*/' --exclude='*' "$VMHOSTPATH"/"$DLDIR"/ext "$VMWORKDIR"
+syncfiles() {
+	# FIXME: This doesn't delete from the right hand side when left disappears.  Extra line SO HACKY.
+	rm -rf "$VMWORKDIR/ext"
+	rsync -am --include='*/PKGBUILD' --include='*/' --exclude='*' "$VMHOSTPATH"/"$DLDIR"/ext "$VMWORKDIR"
 }
 
 sourceall() {
@@ -42,6 +43,6 @@ archiveresults() {
 }
 
 # update
-# sync
+# syncfiles
 # sourceall
 # archiveresults
