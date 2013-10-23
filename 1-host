@@ -40,7 +40,7 @@ extractpkgs() {
 	pushd ./"$DLDIR"/ext >/dev/null
 
 	find . -type f -executable | SHELL=/usr/bin/bash parallel -m 'stat -c "%A %n" {}' > "$HOSTPATH"/"$RESULTDIR"/executablebugs 
-	find . -maxdepth 2 -mindepth 2  -type d | SHELL=/usr/bin/bash parallel -m 'chmod 755 --preserve-root {}'
+	find . -maxdepth 2 -mindepth 2 -type d | SHELL=/usr/bin/bash parallel -m 'chmod 755 --preserve-root {}'
 	find . -type f ! -perm 644 | SHELL=/usr/bin/bash parallel -m 'chmod 644 --preserve-root {}'
 	popd >/dev/null
 }

@@ -151,6 +151,7 @@ validate_arch() {
 validate_license() {
 	[[ "$ROVERBOSITY" -ge 2 ]] && local LICENSENAME && for LICENSENAME in "${license[@]}"
 	do
+		if [[ "$LICENSENAME" == "unknown" ]]; then [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] License name 'unknown' provided.  Please attempt to identify actual license."; continue ;fi 
 		[[ "$LICENSENAME" == "custom" ]] || { [[ "$LICENSENAME" == "custom:"?* ]] && { ! inarray true "${LICENSENAME#custom:}" "${ROVALIDILICENSES[@]}" && ! inarray false "${LICENSENAME#custom:}" "${ROVALIDLICENSES[@]}"; }; } || inarray true "$LICENSENAME" "${ROVALIDILICENSES[@]}" || inarray false "$LICENSENAME" "${ROVALIDLICENSES[@]}" || echo "[*] Bad license name.  ($LICENSENAME)"
 	done
 }
@@ -448,7 +449,7 @@ do
 		readonly ROOFFICIALARCHES=(any x86_64 i686)
 		readonly ROOTHERARCHES=(arm armv6h armv7h)
 		readonly ROVALIDOPTIONS=(strip docs libtool staticlibs emptydirs zipman purge upx debug ccache distcc buildflags makeflags)
-		readonly ROVALIDILICENSES=(AGPL AGPL3 Artistic2.0 CCPL:by CCPL:by-nc CCPL:by-nc-nd CCPL:by-nc-sa CCPL:by-nd CCPL:by-sa CDDL CPL EPL FDL FDL1.2 FDL1.3 GPL GPL2 GPL3 LGPL LGPL2.1 LGPL3 LPPL MPL PerlArtistic PHP PSF RUBY W3C ZPL zsync BSD MIT Python ZLIB)
+		readonly ROVALIDILICENSES=(AGPL AGPL3 Artistic2.0 CCPL:by CCPL:by-nc CCPL:by-nc-nd CCPL:by-nc-sa CCPL:by-nd CCPL:by-sa CDDL CPL EPL FDL FDL1.2 FDL1.3 GPL GPL2 GPL3 LGPL LGPL2.1 LGPL3 LPPL MPL PerlArtistic PHP PSF RUBY W3C ZPL zsync BSD MIT Python ZLIB unknown)
 		readonly ROVALIDLICENSES=(Apache APACHE)
 		readonly ROVALIDPKGEXTS=(tar.gz tar.bz2 tar.xz tar.lrz tar.lzo tar.Z tar)
 		readonly RODEFAULTDLAGENTS=(http https ftp rsync scp)
