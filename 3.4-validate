@@ -8,14 +8,12 @@
 # Check non-depends to ensure no duplication of depends.
 # Check all arrays aren't duplicating any data.
 # VCS source but non-vcs package.
-# Check pkgname without VCS suffix.
-# More detailed analysis of backup array.
 # Full version number in pkgname.
-# The package has been flagged for over X weeks.
-# Version >= 0 when no version is therefore needed.
+# Function with unexpected name (not pkgver, prepare, build, check, package)
+# Non skip for whole repository.
+# Show verbosity of each message.
 #
-# For bad packages, three extra messages:
-# - This package is an orphan
+# For bad packages, extra messages:
 # - This package is over a year old
 # - This package has <=5 // >=100 votes
 #
@@ -83,11 +81,11 @@ dep_canbesatisfied() {
 
 dep_notinbasedevel() {
 	local PACKAGENAME="${1%%[=><]*}" REQDVERSION="${1##*[=><]}"
-	[[ "$REQDVERSION" == "$1" ]] && grep -ql "^$PACKAGENAME$\|^$PACKAGENAME=" ./"$RESULTDIR"/tmp_basedevel && { ! [[ "$ROVERBOSITY" -gt 2 ]] || echo "[*] Base-devel already contains $1."; } && return
+	[[ "$REQDVERSION" == "$1" ]] && grep -ql "^$PACKAGENAME$\|^$PACKAGENAME=" ./"$RESULTDIR"/tmp_basedevel && { ! [[ "$ROVERBOSITY" -gt 2 ]] || echo "[*] Packages installed by fetching base-devel do not need to be depended upon.  ($1)"; } && return
 	[[ "$REQDVERSION" != "$1" ]] && local VERCMP && grep "^$PACKAGENAME=" ./"$RESULTDIR"/tmp_basedevel | sed "s/*=//" | while read line
 	do
 		VERCMP=$(vercmp "$REQDVERSION" "${line##*=}")
-		{ { [[ "$VERCMP" == 1 ]] && [[ "$1" == *"<"* ]]; } || { [[ "$VERCMP" == 0 ]] && [[ "$1" == *"="* ]]; } || { [[ "$VERCMP" == -1 ]] && [[ "$1" == *">"* ]]; }; } && { ! [[ "$ROVERBOSITY" -gt 2 ]] || echo "[*] Packages from base-devel already satisfy $1."; } && break
+		{ { [[ "$VERCMP" == 1 ]] && [[ "$1" == *"<"* ]]; } || { [[ "$VERCMP" == 0 ]] && [[ "$1" == *"="* ]]; } || { [[ "$VERCMP" == -1 ]] && [[ "$1" == *">"* ]]; }; } && { ! [[ "$ROVERBOSITY" -gt 2 ]] || echo "[*] Installing base-devel already satisfies $1."; } && break
 	done
 }
 
@@ -98,7 +96,6 @@ dep_nottoolong() {
 
 validate_vcs_suffix() {
 	local SOURCEENTRY PREFIX=false FRAGMENT=true RETURNMSG="" VCSTYPE="${PKGBUILDIDENTIFIER##*-}"
-	inarray false "$VCSTYPE" "${!ROVCSTYPES[@]}" || return
 	inarray false "${ROVCSTYPES[$VCSTYPE]}" "${makedepends[@]}" || inarray false "${ROVCSTYPES[$VCSTYPE]}" "${depends[@]}" || RETURNMSG="$RETURNMSG  Failed to declare makedepend on ${ROVCSTYPES[$VCSTYPE]}."
 	for SOURCEENTRY in "${source[@]}"
 	do
@@ -115,7 +112,7 @@ validate_pkgname() {
 	do
 		[[ "$NAME" =~ ^$REGEXVALIDPKGNAME$ ]] || echo "[*] Package name contains characters outside the permitted range.  ($NAME)"
 	done
-	[[ "$ROVERBOSITY" -ge 2 ]] && validate_vcs_suffix
+	[[ "$ROVERBOSITY" -ge 2 ]] && $VCSPKG && validate_vcs_suffix
 	[[ "$ROVERBOSITY" -ge 4 ]] && { [[ "$ARCHIVENAME" != "$INNERFOLDER" ]] || [[ "$PKGBUILDIDENTIFIER" != "$INNERFOLDER" ]]; } && echo "[*] Archive name $ARCHIVENAME, the directory inside $INNERFOLDER, and the package name $PKGBUILDIDENTIFIER do not match."
 }
 
@@ -128,7 +125,10 @@ validate_pkgrel() {
 }
 
 validate_pkgdesc() {
+	shopt -s nocasematch
 	[[ "$ROVERBOSITY" -ge 3 ]] && [[ "$pkgdesc" =~ (^|[^a-zA-Z])"$PKGBUILDIDENTIFIER"([^a-zA-Z]|$) ]] && echo "[*] Found package name inside pkgdesc. ($PKGBUILDIDENTIFIER)"
+	[[ "$ROVERBOSITY" -ge 3 ]] && $VCSPKG && [[ "$pkgdesc" =~ (^|[^a-zA-Z0-9])"$VCSLESSPKGBUILDIDENTIFIER"([^a-zA-Z0-9]|$) ]] && echo "[*] Found package name without VCS suffix inside pkgdesc. ($VCSLESSPKGBUILDIDENTIFIER)"
+	shopt -u nocasematch
 	{ { [[ "$ROVERBOSITY" == 3 ]] && [[ ${#pkgdesc} -gt 100 ]]; } || { [[ "$ROVERBOSITY" -ge 4 ]] && [[ ${#pkgdesc} -gt 80 ]]; } } && echo "[*] Excessively long pkgdesc. (${#pkgdesc} chars)"
 }
 
@@ -151,7 +151,7 @@ validate_arch() {
 validate_license() {
 	[[ "$ROVERBOSITY" -ge 2 ]] && local LICENSENAME && for LICENSENAME in "${license[@]}"
 	do
-		if [[ "$LICENSENAME" == "unknown" ]]; then [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] License name 'unknown' provided.  Please attempt to identify actual license."; continue ;fi 
+		if [[ "$LICENSENAME" == "unknown" ]]; then [[ "$ROVERBOSITY" -ge 3 ]] && echo "[*] License name 'unknown' provided.  Please attempt to identify actual license."; continue; fi 
 		[[ "$LICENSENAME" == "custom" ]] || { [[ "$LICENSENAME" == "custom:"?* ]] && { ! inarray true "${LICENSENAME#custom:}" "${ROVALIDILICENSES[@]}" && ! inarray false "${LICENSENAME#custom:}" "${ROVALIDLICENSES[@]}"; }; } || inarray true "$LICENSENAME" "${ROVALIDILICENSES[@]}" || inarray false "$LICENSENAME" "${ROVALIDLICENSES[@]}" || echo "[*] Bad license name.  ($LICENSENAME)"
 	done
 }
@@ -423,13 +423,13 @@ local FUNCTIONNAME && for FUNCTIONNAME in "${PKGBUILDFUNCTIONS[@]}"
 	do
 		FUNCTIONCONTENT="${!FUNCTIONNAME}"
 		[[ "$FUNCTIONNAME" == "pkgbuildfunction_build" ]] && [[ "$FUNCTIONCONTENT" =~ (\\$|\\{)pkgdir([^A-Za-z0-9_]|$) ]] && echo "[*] Cannot use pkgdir in build()."
-		[[ "$FUNCTIONCONTENT" == *"sudo"* ]] && echo "[*] Found using sudo within ${FUNCTIONNAME#pkgbuildfunction_}()."		
+		[[ "$FUNCTIONCONTENT" =~ ($'\n'|$'\t'|$'\v'|$'\f'|$'\r'| |\||\;)sudo($'\n'|$'\t'|$'\v'|$'\f'|$'\r'| ) ]] && echo "[*] Found using sudo within ${FUNCTIONNAME#pkgbuildfunction_}()."		
 		[[ "$FUNCTIONCONTENT" =~ (\$|\{)startdir([^A-Za-z0-9_]|$) ]] && echo "[*] Appears to rely on startdir, which is deprecated, in ${FUNCTIONNAME#pkgbuildfunction_}()."
 		[[ "$FUNCTIONCONTENT" =~ (\$|\{)(srcdir|pkgdir)/\.\.([^A-Za-z0-9_]|$) ]] && echo "[*] Appears to traverse up a directory from the srcdir or pkgdir, in ${FUNCTIONNAME#pkgbuildfunction_}()."
 		[[ "$ROVERBOSITY" -ge 2 ]] && local N=$'\n' && [[ "${FUNCTIONCONTENT//$N/ }" =~ \|\|($'\n'|$'\t'|$'\v'|$'\f'|$'\r'| )*return ]] && echo "[*] Found using || return within ${FUNCTIONNAME#pkgbuildfunction_}()."
 		[[ "$ROVERBOSITY" -ge 2 ]] && local SHEBANG && read -rn 2 SHEBANG < <(cat "./$DLDIR/$EXTDIR/$ARCHIVENAME/$INNERFOLDER/PKGBUILD") && [[ "$SHEBANG" == "#!" ]] && echo "[*] PKGBUILDs should not begin with a shebang.  They will be sourced, not executed."
 		# FIXME: False positive if sed-ing. (, |, whitespace are acceptable. ${CARCH#...?
-		[[ "$ROVERBOSITY" -ge 4 ]] && [[ "$FUNCTIONCONTENT" =~ ([^A-Za-z0-9_]|^)(CARCH|CFLAGS|CHOST|CPPFLAGS|CXXFLAGS|DEBUG_CFLAGS|DEBUG_CXXFLAGS|LDFLAGS|MAKEFLAGS|MAKEOPTS)+?= ]] && echo "[*] Found setting one of the many sets of build flags.  Check if it is still needed in ${FUNCTIONNAME#pkgbuildfunction_}()."
+		# [[ "$ROVERBOSITY" -ge 4 ]] && [[ "$FUNCTIONCONTENT" =~ ([^A-Za-z0-9_]|^)(CARCH|CFLAGS|CHOST|CPPFLAGS|CXXFLAGS|DEBUG_CFLAGS|DEBUG_CXXFLAGS|LDFLAGS|MAKEFLAGS|MAKEOPTS)+?= ]] && echo "[*] Found setting one of the many sets of build flags.  Check if it is still needed in ${FUNCTIONNAME#pkgbuildfunction_}()."
 	done
 }
 
@@ -468,6 +468,8 @@ do
 		source "$PACKAGE" 2>/dev/null
 		grep -ql $'\r' <(declare -p) && echo "[o] $ARCHIVENAME ($APPLICABLEARCHES)" && echo "The PKGBUILD in this archive contained CRLF line endings, which makepkg will refuse to source.  Aborted." && exit
 		PKGBUILDIDENTIFIER=$({ [[ "${#pkgname[*]}" -gt 1 ]] && [[ "$pkgbase" != "" ]] && echo "$pkgbase"; } || echo "$pkgname")
+		VCSPKG=false
+		inarray false "${PKGBUILDIDENTIFIER##*-}" "${!ROVCSTYPES[@]}" && VCSPKG=true && VCSLESSPKGBUILDIDENTIFIER="${PKGBUILDIDENTIFIER%-*}"
 		PKGOWNER=$(awk '$1 == "'"$PKGBUILDIDENTIFIER"'" { print $2 }' $RESULTDIR/pkgowners)
 		PKGOOD=$(awk '$1 == "'"$PKGBUILDIDENTIFIER"'" { if($2 == "yes") print ", flagged" }' $RESULTDIR/pkgood)
 		echo "[o] $PKGBUILDIDENTIFIER ($APPLICABLEARCHES, $PKGOWNER$PKGOOD)"
@@ -492,22 +494,33 @@ do
 			$REQUIREDFIELD && [[ "$PKGBUILDFIELD" == "--" ]] && REQUIREDFIELD=false && ISSTRING=true && continue
 			[[ "$PKGBUILDFIELD" == "---" ]] && ISSTRING=false && continue
 			VARIABLETYPE=$(declare -p "$PKGBUILDFIELD" 2>/dev/null | head -n 1 | cut -d " " -f 2)
-			if [[ "$VARIABLETYPE" != "" ]]; then
-				if [[ "$PKGBUILDFIELD" == "pkgname" ]]; then
-					# Special case, can be both.
-					[[ "${pkgname[*]}" =~ ^[\ ]*$ ]] && echo "[*] Essential field $PKGBUILDFIELD has been left blank."
-					validate_pkgname
-				elif $ISSTRING && [[ "$VARIABLETYPE" =~ ^[^Aa]+$ ]]; then
-					$REQUIREDFIELD && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] Essential field $PKGBUILDFIELD has been left blank."
-					validate_$PKGBUILDFIELD
-				elif ! $ISSTRING && [[ "$VARIABLETYPE" == *[Aa]* ]]; then
-					[[ "$ROVERBOSITY" -le 3 ]] && 
-					$REQUIREDFIELD && TMPVAR="$PKGBUILDFIELD""[@]" && [[ "${!TMPVAR}" == "" ]] && echo "[*] Essential field $PKGBUILDFIELD has been left blank."
-					validate_$PKGBUILDFIELD
-				else
-					$ISSTRING && echo "[*] Skipping $PKGBUILDFIELD.  Should be a string but was an array." || echo "[*] Skipping $PKGBUILDFIELD.  Should be an array but was a string."
+			[[ "$VARIABLETYPE" == "" ]] && $REQUIREDFIELD && echo "[*] The essential variable '$PKGBUILDFIELD' has been omitted."
+			[[ "$VARIABLETYPE" == "" ]] && continue
+			ACTUALLYSTRING=false
+			[[ "$VARIABLETYPE" =~ ^[^Aa]+$ ]] && ACTUALLYSTRING=true
+			
+			if [[ "$PKGBUILDFIELD" != "pkgname" ]]; then
+				if { $ISSTRING && ! $ACTUALLYSTRING; }; then 
+					echo "[*] Expected $PKGBUILDFIELD to be a string, was an array.  Converting and attempting tests anyway."
+					TMP="$PKGBUILDFIELD""[*]"
+					TMP="${!TMP}"
+					unset $PKGBUILDFIELD
+					eval "$PKGBUILDFIELD='$TMP'"
+				elif { ! $ISSTRING && $ACTUALLYSTRING; }; then
+					echo "[*] Expected $PKGBUILDFIELD to be an array, was a string.  Converting and attempting tests anyway."
+					eval "$PKGBUILDFIELD=('${!PKGBUILDFIELD}')"
 				fi
 			fi
+
+			if $ACTUALLYSTRING; then
+				$REQUIREDFIELD && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] Required variable '$PKGBUILDFIELD' has been set, but is empty."
+				! $REQUIREDFIELD && [[ "$ROVERBOSITY" -ge 3 ]] && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] Variable '$PKGBUILDFIELD' has been set, but is empty."
+			else
+				$REQUIREDFIELD && TMPVAR="$PKGBUILDFIELD""[@]" && [[ "${!TMPVAR}" == "" ]] && echo "[*] Required variable '$PKGBUILDFIELD' has been set, but is empty."
+				! $REQUIREDFIELD && [[ "$ROVERBOSITY" -ge 3 ]] && TMPVAR="$PKGBUILDFIELD""[@]" && [[ "${!TMPVAR}" == "" ]] && echo "[*] Variable '$PKGBUILDFIELD' has been set, but is empty."
+			fi
+
+			validate_$PKGBUILDFIELD
 		done
 
 		validate_archivefiles

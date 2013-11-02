@@ -78,22 +78,39 @@ REPORTHEADER
 
 	echo
 	echo "=================================================[Main package faults]"
-	expac -Sg '%n' base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk '{print $1;}' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' | SHELL=/usr/bin/bash parallel -j8 'expac -S1 "%n=%v  %P" {} | sed "s/  /\n/g" | grep -v "\.so=\|\.so$\|^$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > ./"$RESULTDIR"/tmp_basedevel
+	expac -Sg '%n' base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk 'BEGIN{RS=ORS="\n"}!a[$1]++ {print $1}' | SHELL=/usr/bin/bash parallel -j8 'expac -S1 "%n=%v  %P" {} | sed "s/  /\n/g" | grep -v "\.so=\|\.so$\|^$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > ./"$RESULTDIR"/tmp_basedevel
 	expac -S "%n=%v  %P" | sed 's/  /\n/g' > ./"$RESULTDIR"/tmp_allpkgnames
 	PKGLIST=$(find ./"$RESULTDIR"/sourced -type f)
 	! $ALLPKGS && PKGSEL=$(grep -Po "^.*(?= $MAINTAINERNAME$)" ./"$RESULTDIR"/pkgowners) && PKGLIST=$(grep -f <(echo "$PKGSEL") <(echo "$PKGLIST"))
 	
-	sort <<< "$PKGLIST" | SHELL=/usr/bin/bash parallel -k -N 20 -j8 './3.4-validate '"$VERBOSITY"' {}'
+	sort <<< "$PKGLIST" | SHELL=/usr/bin/bash parallel -k -N 20 -j8 './3.4-validate '"$VERBOSITY"' {}' | tee /tmp/errors-"$MAINTAINERNAME$VERBOSITY"
+	if $SEPARATEFILES; then
+		if $ALLPKGS; then
+			rm -r "/tmp/permaintainerlogs$VERBOSITY"
+			mkdir "/tmp/permaintainerlogs$VERBOSITY"
+			awk 'BEGIN{RS=ORS="\n"}!a[$2]++ {print $2}' ./"$RESULTDIR"/pkgowners | SHELL=/usr/bin/bash parallel -j8 "awk '/, {}(,|\))/,/^$/' '/tmp/errors-$VERBOSITY' >'/tmp/permaintainerlogs$VERBOSITY/{}'"
+			find "/tmp/permaintainerlogs$VERBOSITY" -type f -empty -delete
+		else
+			echo "==============[Logs for $MAINTAINERNAME only begin here]=============="
+			awk '/, '"$MAINTAINERNAME"'(,|\))/,/^$/' /tmp/errors-"$MAINTAINERNAME$VERBOSITY" | tee /tmp/logsfor"$MAINTAINERNAME"
+		fi
+	fi
+
 	rm ./"$RESULTDIR"/{tmp_basedevel,tmp_allpkgnames}
 }
 
 VERBOSITY=0
 ALLPKGS=true
-while getopts "m:v" OPTION; do
+SEPARATEFILES=false
+while getopts "m:sv" OPTION; do
 	case "$OPTION" in
 		m)
 			MAINTAINERNAME="$OPTARG"
 			ALLPKGS=false
+			SEPARATEFILES=true
+			;;
+		s)
+			SEPARATEFILES=true
 			;;
 		v)
 			VERBOSITY=$((VERBOSITY+1))
@@ -104,6 +121,7 @@ done
 
 
 #prep
+#urlcheck
 #coalesce
 #urlcheck
 #coalesce
