@@ -5,7 +5,7 @@ KNOWN BUGS:
 [*] Required variable 'license' has been set, but is empty.
 [*] Bad license name.  ()
 
-where only one of these would have still been satisfactory.
+where only one of these would have still been satisfactory.  This has been fixed in 57db308 and will be fixed for the next run.
 
 QUESTIONS:
 
