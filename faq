@@ -1,0 +1,21 @@
+Why does my report say a package source is down?  It's up!  I can see it is!
+
+In order to validate a URL, it is fetched multiple times over a day or two.  If it happens that the server suffers downtime exactly when the checks take place, it will be miscategorised.  Currently, it is also the case that URL patterns that have to have their own DLAGENT are considered to always fail.  This will be resolved.
+
+--
+
+What do messages like "Architecture not recognised.  (i686 x86_64)" or "Bad dependency.  ()" mean?
+
+If you are providing an array of elements, each element is tested in turn.  In the first example, 'i686 x86_64' is not an architecture.  The fact this ever worked in makepkg was a bug due to missing quotation marks, and was corrected in pacman's git repository, commit b82a0d83, on Oct 31.  In the latter case, the issue is explictly stating a dependency on the empty string, rather than not making any dependencies.  Since no package has a package name of the empty string, this /technically/ cannot be resolved.
+
+--
+
+Why does my package show twice with the same errors, one as (i686) and once as (x86_64)?
+
+If your PKGBUILD has any variables set specially based on the CARCH, then it goes through the report generator once per CARCH.  As it currently stands, there is no aggregation step if the issues in the package are identical regardless of CARCH.
+
+--
+
+I disowned or adopted a package, why isn't it listed as belonging to me?
+
+The snapshot not only fetches the packages at that point in time, but associates the maintainer name, flagged/unflagged status and vote count at that point.  Changes made to PKGBUILDs, ownership, or changing the flag state on a package will not be recognised until the AUR packages are re-fetched.
