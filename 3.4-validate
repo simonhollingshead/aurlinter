@@ -512,15 +512,16 @@ do
 				fi
 			fi
 
+			SKIPVALIDATION=false
 			if $ACTUALLYSTRING; then
-				$REQUIREDFIELD && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] Required variable '$PKGBUILDFIELD' has been set, but is empty."
-				! $REQUIREDFIELD && [[ "$ROVERBOSITY" -ge 3 ]] && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] Variable '$PKGBUILDFIELD' has been set, but is empty."
+				$REQUIREDFIELD && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] Required variable '$PKGBUILDFIELD' has been set, but is empty." && SKIPVALIDATION=true
+				! $REQUIREDFIELD && [[ "$ROVERBOSITY" -ge 3 ]] && [[ "${!PKGBUILDFIELD}" == "" ]] && echo "[*] Variable '$PKGBUILDFIELD' has been set, but is empty." && SKIPVALIDATION=true
 			else
-				$REQUIREDFIELD && TMPVAR="$PKGBUILDFIELD""[@]" && [[ "${!TMPVAR}" == "" ]] && echo "[*] Required variable '$PKGBUILDFIELD' has been set, but is empty."
-				! $REQUIREDFIELD && [[ "$ROVERBOSITY" -ge 3 ]] && TMPVAR="$PKGBUILDFIELD""[@]" && [[ "${!TMPVAR}" == "" ]] && echo "[*] Variable '$PKGBUILDFIELD' has been set, but is empty."
+				$REQUIREDFIELD && TMPVAR="$PKGBUILDFIELD""[@]" && [[ "${!TMPVAR}" == "" ]] && echo "[*] Required variable '$PKGBUILDFIELD' has been set, but is empty." && SKIPVALIDATION=true
+				! $REQUIREDFIELD && [[ "$ROVERBOSITY" -ge 3 ]] && TMPVAR="$PKGBUILDFIELD""[@]" && [[ "${!TMPVAR}" == "" ]] && echo "[*] Variable '$PKGBUILDFIELD' has been set, but is empty." && SKIPVALIDATION=true
 			fi
 
-			validate_$PKGBUILDFIELD
+			$SKIPVALIDATION || validate_$PKGBUILDFIELD
 		done
 
 		validate_archivefiles
