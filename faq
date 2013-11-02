@@ -7,6 +7,8 @@ KNOWN BUGS:
 
 where only one of these would have still been satisfactory.  This has been fixed in 57db308 and will be fixed for the next run.
 
+- There is no clear indication as to what is considered a severity 1 bug right now.  A verbal description would be "Something that stops the PKGBUILD from producing a pkg.tar.gz file, or something that has the potential to do so once a deprecated function is removed from use."
+
 QUESTIONS:
 
 Why does my report say a package source is down?  It's up!  I can see it is!
