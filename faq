@@ -12,7 +12,7 @@ If you are providing an array of elements, each element is tested in turn.  In t
 
 Why does my package show twice with the same errors, one as (i686) and once as (x86_64)?
 
-If your PKGBUILD has any variables set specially based on the CARCH, then it goes through the report generator once per CARCH.  As it currently stands, there is no aggregation step if the issues in the package are identical regardless of CARCH.
+If your PKGBUILD has any variables set specially based on the CARCH, then it goes through the report generator once per CARCH, otherwise one analysis phase called 'allarches' occurs.  As it currently stands, there is no aggregation step if the issues in the package are identical regardless of CARCH.
 
 --
 
