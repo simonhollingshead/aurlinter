@@ -7,7 +7,9 @@ KNOWN BUGS:
 
 where only one of these would have still been satisfactory.  This has been fixed in 57db308 and will be fixed for the next run.
 
-- There is no clear indication as to what is considered a severity 1 bug right now.  A verbal description would be "Something that stops the PKGBUILD from producing a pkg.tar.gz file, or something that has the potential to do so once a deprecated function is removed from use."
+- There is no clear indication of message severity.  Fixed in 30b9e0f.  Worst severity bugs are those that stop generation of a pkg.tar.gz file, or will when a deprecated element is finally removed."
+
+- Metadata for some packages was wrong in the case where a pkgname did not match the archive name.
 
 QUESTIONS:
 

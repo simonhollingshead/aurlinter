@@ -476,9 +476,9 @@ do
 		PKGBUILDIDENTIFIER=$({ [[ "${#pkgname[*]}" -gt 1 ]] && [[ "$pkgbase" != "" ]] && echo "$pkgbase"; } || echo "$pkgname")
 		VCSPKG=false
 		inarray false "${PKGBUILDIDENTIFIER##*-}" "${!ROVCSTYPES[@]}" && VCSPKG=true && VCSLESSPKGBUILDIDENTIFIER="${PKGBUILDIDENTIFIER%-*}"
-		PKGOWNER=$(awk '$1 == "'"$PKGBUILDIDENTIFIER"'" { print $2 }' $RESULTDIR/pkgowners)
-		PKGVOTES=$(awk '$1 == "'"$PKGBUILDIDENTIFIER"'" { if ($2 == 1 ) { print $2 " vote" } else print $2 " votes" }' $RESULTDIR/pkgvotes)
-		PKGOOD=$(awk '$1 == "'"$PKGBUILDIDENTIFIER"'" { if ($2 == "yes") print ", flagged" }' $RESULTDIR/pkgood)
+		PKGOWNER=$(awk '$1 == "'"$ARCHIVENAME"'" { print $2 }' $RESULTDIR/pkgowners)
+		PKGVOTES=$(awk '$1 == "'"$ARCHIVENAME"'" { if ($2 == 1 ) { print $2 " vote" } else print $2 " votes" }' $RESULTDIR/pkgvotes)
+		PKGOOD=$(awk '$1 == "'"$ARCHIVENAME"'" { if ($2 == "yes") print ", flagged" }' $RESULTDIR/pkgood)
 		echo ">>> $PKGBUILDIDENTIFIER ($APPLICABLEARCHES, $PKGOWNER, $PKGVOTES$PKGOOD)"
 		
 		if [[ "$ROVERBOSITY" -ge 2 ]]; then
