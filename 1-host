@@ -14,11 +14,17 @@ genpkgs() {
 	rm "$HOSTPATH"/"$DLDIR"/urls
 }
 
+split() {
+    local IFS=$'\n';
+    echo "$*";
+}
+
 genassoc() {
 	pushd ./"$DLDIR"/gz/ >/dev/null
-	echo *.tar.gz | SHELL=/usr/bin/bash parallel -md ' ' 'IN="{}"; cower --format "%n %m" -i -- ${IN//\.tar\.gz/}' > "$HOSTPATH"/"$RESULTDIR"/pkgowners
-	echo *.tar.gz | SHELL=/usr/bin/bash parallel -md ' ' 'IN="{}"; cower --format "%n %t" -i -- ${IN//\.tar\.gz/}' > "$HOSTPATH"/"$RESULTDIR"/pkgood
-	echo *.tar.gz | SHELL=/usr/bin/bash parallel -md ' ' 'IN="{}"; cower --format "%n %o" -i -- ${IN//\.tar\.gz/}' > "$HOSTPATH"/"$RESULTDIR"/pkgvotes
+	ALLPKGS="$(split *.tar.gz)"
+	SHELL=/usr/bin/bash parallel -m 'IN="{}"; cower --format "%n %m" -i -- ${IN//\.tar\.gz/}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgowners
+	SHELL=/usr/bin/bash parallel -m 'IN="{}"; cower --format "%n %t" -i -- ${IN//\.tar\.gz/}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgood
+	SHELL=/usr/bin/bash parallel -m 'IN="{}"; cower --format "%n %o" -i -- ${IN//\.tar\.gz/}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgvotes
 	popd >/dev/null
 }
 
