@@ -370,7 +370,7 @@ validate_CPPFLAGS() {
 }
 
 validate_CXXFLAGS() {
-	[[ "$ROVERBOSITY" -ge 4 ]] && echo "[?] Modifies user-set CXXFLAGSs.  ($CXXFLAGS)"
+	[[ "$ROVERBOSITY" -ge 4 ]] && echo "[?] Modifies user-set CXXFLAGS.  ($CXXFLAGS)"
 }
 
 validate_DEBUG_CFLAGS() {
