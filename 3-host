@@ -90,8 +90,10 @@ REPORTHEADER
 			mkdir "/tmp/permaintainerlogs$VERBOSITY"
 			awk 'BEGIN{RS=ORS="\n"}!a[$2]++ {print $2}' ./"$RESULTDIR"/pkgowners | SHELL=/usr/bin/bash parallel -j8 "awk '/, {}(,|\))/,/^$/' '/tmp/errors-$VERBOSITY' >'/tmp/permaintainerlogs$VERBOSITY/{}'"
 			find "/tmp/permaintainerlogs$VERBOSITY" -type f -empty -delete
+			sed -i '1i Severity key:\n===============\n[!] Possibly package-breaking.\n[X] Ignores PKGBUILD guidelines.\n[+] Inadvisable actions.\n[?] Can be sane, but should be checked.\n===============\n' "/tmp/permaintainerlogs$VERBOSITY/"*
 		else
 			echo "==============[Logs for $MAINTAINERNAME only begin here]=============="
+			echo "Severity key:\n===============\n[!] Possibly package-breaking.\n[X] Ignores PKGBUILD guidelines.\n[+] Inadvisable actions.\n[?] Can be sane, but should be checked.\n===============\n" | tee /tmp/logsfor"$MAINTAINERNAME"
 			awk '/, '"$MAINTAINERNAME"'(,|\))/,/^$/' /tmp/errors-"$MAINTAINERNAME$VERBOSITY" | tee /tmp/logsfor"$MAINTAINERNAME"
 		fi
 	fi
