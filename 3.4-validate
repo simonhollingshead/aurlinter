@@ -472,15 +472,16 @@ do
 		readonly ROVERBOSITY="$VERBOSITY"
 
 		source "$PACKAGE" 2>/dev/null
-		grep -ql $'\r' <(declare -p) && echo "[o] $ARCHIVENAME ($APPLICABLEARCHES)" && echo "The PKGBUILD in this archive contained CRLF line endings, which makepkg will refuse to source.  Aborted." && exit
-		PKGBUILDIDENTIFIER=$({ [[ "${#pkgname[*]}" -gt 1 ]] && [[ "$pkgbase" != "" ]] && echo "$pkgbase"; } || echo "$pkgname")
-		VCSPKG=false
-		inarray false "${PKGBUILDIDENTIFIER##*-}" "${!ROVCSTYPES[@]}" && VCSPKG=true && VCSLESSPKGBUILDIDENTIFIER="${PKGBUILDIDENTIFIER%-*}"
 		PKGOWNER=$(awk '$1 == "'"$ARCHIVENAME"'" { print $2 }' $RESULTDIR/pkgowners)
 		PKGVOTES=$(awk '$1 == "'"$ARCHIVENAME"'" { if ($2 == 1 ) { print $2 " vote" } else print $2 " votes" }' $RESULTDIR/pkgvotes)
 		PKGOOD=$(awk '$1 == "'"$ARCHIVENAME"'" { if ($2 == "yes") print ", flagged" }' $RESULTDIR/pkgood)
+		grep -ql $'\r' <(declare -p) && echo ">>> $ARCHIVENAME ($APPLICABLEARCHES, $PKGOWNER, $PKGVOTES$PKGOOD)" && echo "[!] The PKGBUILD in this archive contained CRLF line endings, which makepkg will refuse to source.  Aborted." && exit
+		PKGBUILDIDENTIFIER=$({ [[ "${#pkgname[*]}" -gt 1 ]] && [[ "$pkgbase" != "" ]] && echo "$pkgbase"; } || echo "$pkgname")
 		echo ">>> $PKGBUILDIDENTIFIER ($APPLICABLEARCHES, $PKGOWNER, $PKGVOTES$PKGOOD)"
 		
+		VCSPKG=false
+		inarray false "${PKGBUILDIDENTIFIER##*-}" "${!ROVCSTYPES[@]}" && VCSPKG=true && VCSLESSPKGBUILDIDENTIFIER="${PKGBUILDIDENTIFIER%-*}"
+
 		if [[ "$ROVERBOSITY" -ge 2 ]]; then
 			PKGBUILDFUNCTIONS=()
 			ALLSETVARS=($(sed "/^_/d;s/=.*//" "$PACKAGE"))

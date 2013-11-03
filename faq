@@ -1,15 +1,15 @@
-KNOWN BUGS:
+KNOWN BUGS, FIXED FOR NEXT RUN:
 
-- If a variable is blank, a message saying so appears, but it is still analysed.  Some analysis stages also complain about blankness, leading to messages like:
+- Blank variables could cause two messages if both the blank check and analysis stage identified the empty string.
 
 [*] Required variable 'license' has been set, but is empty.
 [*] Bad license name.  ()
 
-where only one of these would have still been satisfactory.  This has been fixed in 57db308 and will be fixed for the next run.
-
-- There is no clear indication of message severity.  Fixed in 30b9e0f.  Worst severity bugs are those that stop generation of a pkg.tar.gz file, or will when a deprecated element is finally removed."
+- There was no clear indication of message severity.  Worst severity bugs are those that stop generation of a pkg.tar.gz file, or will when a deprecated element is finally removed.
 
 - Metadata for some packages was wrong in the case where a pkgname did not match the archive name.
+
+- Logs didn't contain any messages about CRLF PKGBUILDs.
 
 QUESTIONS:
 
