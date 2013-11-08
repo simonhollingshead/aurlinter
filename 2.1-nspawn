@@ -1,6 +1,16 @@
 #!/bin/bash
 source config
 
+FROMABS=false
+while getopts "a" OPTION; do
+	case "$OPTION" in
+		a)
+			FROMABS=true
+			shift 1
+			;;
+	esac	
+done
+
 SOURCEARCH=("x86_64" "i686")
 FILEPATHS=($1)
 
@@ -8,7 +18,7 @@ for FILEPATH in "${FILEPATHS[@]}"
 do
 	DIRPATH="${FILEPATH%/*}"
 	DIRPATH="${DIRPATH#./}"
-	DIRNAME="${DIRPATH//\//---}"
+	$FROMABS && DIRNAME="$DIRPATH" || DIRNAME="${DIRPATH//\//---}"
 
 	for CARCH in "${SOURCEARCH[@]}"
 	do
@@ -44,9 +54,13 @@ do
 			done
 			unset SETFUNCTIONNAME SETFUNCTIONNAMECLEAN
 
-			ARCHIVENAME=${DIRPATH%%/*}
-			INNERFOLDER=${DIRPATH#*/}
-			[[ "$INNERFOLDER" == "$DIRPATH" ]] && INNERFOLDER=""
+			if $FROMABS; then
+				ARCHIVENAME="$DIRPATH"
+			else
+				ARCHIVENAME="${DIRPATH%%/*}"
+				INNERFOLDER="${DIRPATH#*/}"
+				[[ "$INNERFOLDER" == "$DIRPATH" ]] && INNERFOLDER=""
+			fi
 
 			set | sort > "$ROVMTMPDIR"/setafter-"$RODIRNAME"
 

@@ -3,61 +3,67 @@
 source config
 
 prep() {
-	if [[ ! -d ./res/sourced ]]; then
-		bsdtar -C ./res -xzf ./res/sourceall.tar.gz
+	if [[ ! -d ./"$RESULTDIR"/sourced ]]; then
+		bsdtar -C ./res -xzf ./"$RESULTDIR"/sourceall.tar.gz
 	fi
 }
 
 coalesce() {
-	if [[ -f res/goodurls ]]; then
-		comm -23 <(sort res/urllist) <(sort res/goodurls) | sponge res/urllist
-		rm res/goodurls
+	if [[ -f ./"$RESULTDIR"/goodurls ]]; then
+		comm -23 <(sort ./"$RESULTDIR"/urllist) <(sort ./"$RESULTDIR"/goodurls) | sponge ./"$RESULTDIR"/urllist
+		rm ./"$RESULTDIR"/goodurls
 	fi
 }
 
 urlcheck() {
-	SHELL=/usr/bin/bash parallel -N 50 -j 50 './3.3-urlcheck "{}"' :::: ./res/urllist >res/goodurls 2>res/faillog
+	SHELL=/usr/bin/bash parallel -N 50 -j 50 './3.3-urlcheck "{}"' :::: ./"$RESULTDIR"/urllist >./"$RESULTDIR"/goodurls 2>./"$RESULTDIR"/faillog
 }
 
 genreport() {
+	FROMABS=false
+	[[ -f "$RESULTDIR"/fromabs ]] && [[ ! -s "$RESULTDIR"/fromabs ]] && FROMABS=true
+
 	cat <<REPORTHEADER
 Each package was sourced in a container with only base and base-devel, with a read-only working directory and no network connection.  This is intentional, since the act of sourcing should not be writing files, downloading files, or using anything that cannot be checked against the dependency array by makepkg first.
 This may mean that some instances of a message such as 'wrote to stdout' or 'wrote to stderr' are not where the PKGBUILD actively uses a msg-like function, but where it attempts to download or write a file to disk.
 
 REPORTHEADER
+	
+	if ! $FROMABS; then
+		echo "==========================================================[Extraction]"
+		cat "$RESULTDIR"/extractbugs
 
-	echo "==========================================================[Extraction]"
-	cat res/extractbugs
-
-	if [[ "$VERBOSITY" -ge 2 ]]; then
-		echo
-		echo "========================================[Executable files in archive]"
-		if [[ "$VERBOSITY" -ge 4 ]]; then
-			cat res/executablebugs
-		else
-			sed 's|[^ ]* ./||;s|/|\n|; s|\n.*||' "./res/executablebugs" | sort | uniq
+		if [[ "$VERBOSITY" -ge 2 ]]; then
+			echo
+			echo "========================================[Executable files in archive]"
+			if [[ "$VERBOSITY" -ge 4 ]]; then
+				cat "$RESULTDIR"/executablebugs
+			else
+				sed 's|[^ ]* ./||;s|/|\n|; s|\n.*||' "./$RESULTDIR/executablebugs" | sort | uniq
+			fi
 		fi
 	fi
 
 	echo
 	echo "================================[PKGBUILDs too many directories deep]"
 	pushd ./"$DLDIR"/"$EXTDIR"/ >/dev/null
-	find . -mindepth 4 -type f -name PKGBUILD
+	$FROMABS && MINDEPTH=3 || MINDEPTH=4
+	find . -mindepth "$MINDEPTH" -type f -name PKGBUILD
 	popd >/dev/null
 
 	echo
 	echo "====================================[PKGBUILDs unable to be analysed]"
-	pushd ./res/temporary >/dev/null
+	pushd ./"$RESULTDIR"/temporary >/dev/null
 
 	if [[ "$VERBOSITY" -ge 3 ]]; then
 		for j in $(
 			for i in *
 			do
 				[[ -e "$i" ]] || continue
-				echo "${i%%-*}"
+				$FROMABS && echo "${i%-*-*}" || echo "${i%%-*}"
 			done | uniq)
 		do
-			echo "${j%%---*}:"
+			$FROMABS && echo "$j" || echo "${j%%---*}:"
 			for k in "$j-"*
 			do
 				[[ -e "$k" ]] || continue
@@ -71,7 +77,7 @@ REPORTHEADER
 		for i in *
 		do
 			[[ -e "$i" ]] || continue
-			echo "${i%%---*}"
+			$FROMABS && echo "${i%-*-*}" || echo "${i%%---*}"
 		done | uniq 
 	fi
 	popd >/dev/null
@@ -81,19 +87,19 @@ REPORTHEADER
 	expac -Sg '%n' base-devel | SHELL=/usr/bin/bash parallel -j8 'pactree -sl {}' | awk 'BEGIN{RS=ORS="\n"}!a[$1]++ {print $1}' | SHELL=/usr/bin/bash parallel -j8 'expac -S1 "%n=%v  %P" {} | sed "s/  /\n/g" | grep -v "\.so=\|\.so$\|^$"' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > ./"$RESULTDIR"/tmp_basedevel
 	expac -S "%n=%v  %P" | sed 's/  /\n/g' > ./"$RESULTDIR"/tmp_allpkgnames
 	PKGLIST=$(find ./"$RESULTDIR"/sourced -type f)
-	! $ALLPKGS && PKGSEL=$(grep -Po "^.*(?= $MAINTAINERNAME$)" ./"$RESULTDIR"/pkgowners) && PKGLIST=$(grep -f <(echo "$PKGSEL") <(echo "$PKGLIST"))
+	! $ALLPKGS && PKGSEL=$(grep -Po "^[^ ]*(?= $MAINTAINERNAME$)" ./"$RESULTDIR"/pkgowners) && PKGLIST=$(grep -f <(echo "$PKGSEL") <(echo "$PKGLIST"))
 	
-	sort <<< "$PKGLIST" | SHELL=/usr/bin/bash parallel -k -N 20 -j8 './3.4-validate '"$VERBOSITY"' {}' | tee /tmp/errors-"$MAINTAINERNAME$VERBOSITY"
+	OPTS=""
+	$FROMABS && OPTS="-a"
+	sort <<< "$PKGLIST" | SHELL=/usr/bin/bash parallel -k -N 25 -j8 './3.4-validate '"$OPTS $VERBOSITY"' {}' | tee /tmp/errors-"$MAINTAINERNAME$VERBOSITY"
 	if $SEPARATEFILES; then
 		if $ALLPKGS; then
 			rm -r "/tmp/permaintainerlogs$VERBOSITY"
 			mkdir "/tmp/permaintainerlogs$VERBOSITY"
 			awk 'BEGIN{RS=ORS="\n"}!a[$2]++ {print $2}' ./"$RESULTDIR"/pkgowners | SHELL=/usr/bin/bash parallel -j8 "awk '/, {}(,|\))/,/^$/' '/tmp/errors-$VERBOSITY' >'/tmp/permaintainerlogs$VERBOSITY/{}'"
 			find "/tmp/permaintainerlogs$VERBOSITY" -type f -empty -delete
-			sed -i '1i Severity key:\n===============\n[!] Possibly package-breaking.\n[X] Ignores PKGBUILD guidelines.\n[+] Inadvisable actions.\n[?] Can be sane, but should be checked.\n===============\n' "/tmp/permaintainerlogs$VERBOSITY/"*
 		else
 			echo "==============[Logs for $MAINTAINERNAME only begin here]=============="
-			echo "Severity key:\n===============\n[!] Possibly package-breaking.\n[X] Ignores PKGBUILD guidelines.\n[+] Inadvisable actions.\n[?] Can be sane, but should be checked.\n===============\n" | tee /tmp/logsfor"$MAINTAINERNAME"
 			awk '/, '"$MAINTAINERNAME"'(,|\))/,/^$/' /tmp/errors-"$MAINTAINERNAME$VERBOSITY" | tee /tmp/logsfor"$MAINTAINERNAME"
 		fi
 	fi

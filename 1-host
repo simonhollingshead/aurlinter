@@ -9,9 +9,13 @@ cleanup() {
 }
 
 genpkgs() {
-	./href > "$HOSTPATH"/"$DLDIR"/urls
-	aria2c -d "$HOSTPATH"/"$DLDIR"/gz -c -i "$HOSTPATH"/"$DLDIR"/urls
-	rm "$HOSTPATH"/"$DLDIR"/urls
+	if $FROMABS; then
+		sudo abs
+	else
+		./href > "$HOSTPATH"/"$DLDIR"/urls
+		aria2c -d "$HOSTPATH"/"$DLDIR"/gz -c -i "$HOSTPATH"/"$DLDIR"/urls
+		rm "$HOSTPATH"/"$DLDIR"/urls
+	fi
 }
 
 split() {
@@ -20,38 +24,58 @@ split() {
 }
 
 genassoc() {
-	pushd ./"$DLDIR"/gz/ >/dev/null
-	ALLPKGS="$(split *.tar.gz)"
-	SHELL=/usr/bin/bash parallel -m 'IN="{}"; cower --format "%n %m" -i -- ${IN//\.tar\.gz/}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgowners
-	SHELL=/usr/bin/bash parallel -m 'IN="{}"; cower --format "%n %t" -i -- ${IN//\.tar\.gz/}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgood
-	SHELL=/usr/bin/bash parallel -m 'IN="{}"; cower --format "%n %o" -i -- ${IN//\.tar\.gz/}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgvotes
-	popd >/dev/null
+	if $FROMABS; then
+		sudo pkgfile -u
+		ALLPKGS="$(pacman -Slq core extra multilib community)"
+		SHELL=/usr/bin/bash parallel -m 'expac -S1 "%n %p" -- {}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgowners
+	else
+		pushd ./"$DLDIR"/gz/ >/dev/null
+		ALLPKGS="$(split *.tar.gz)"
+		SHELL=/usr/bin/bash parallel -m 'IN="{}"; cower --format "%n %m" -i -- ${IN//\.tar\.gz/}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgowners
+		SHELL=/usr/bin/bash parallel -m 'IN="{}"; cower --format "%n %t" -i -- ${IN//\.tar\.gz/}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgood
+		SHELL=/usr/bin/bash parallel -m 'IN="{}"; cower --format "%n %o" -i -- ${IN//\.tar\.gz/}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgvotes
+		popd >/dev/null
+	fi
 }
 
 extractpkgs() {
-	# bsdtar is far better with some of the oddball compression tools the maintainers have used.
-	# Blacklisting can just be a grep between 'done' and 'parallel' in the pipeline, e.g. for zipbombs.
-	for i in ./"$DLDIR"/gz/*.tar.gz
-	do
-		printf "%s\n" "$i"
-	done | SHELL=/usr/bin/bash parallel -j8 -k '
-	TMP={}           # DLDIR/gz/A.tar.gz
-	TMP=${TMP##*/}   # A.tar.gz
-	TMP=${TMP%.tar.gz} # A
-	mkdir ./"'"$DLDIR"'"/ext/"$TMP"
-	OUT=$(bsdtar -C ./"'"$DLDIR"'"/ext/"$TMP" -xvf "{}" 2>&1 >/dev/null | grep -v "^x [^:]*$")
-	[[ "$OUT" != "" ]] && printf "Errors in decompressing %s:\n%b\n\n" "$TMP" "$OUT"
-	' > ./"$RESULTDIR"/extractbugs
+	if $FROMABS; then
+		cp -r "/var/abs/"*"/." ./"$DLDIR"/ext/
+		touch ./"$RESULTDIR"/fromabs
+	else
+		# bsdtar is far better with some of the oddball compression tools the maintainers have used.
+		# Blacklisting can just be a grep between 'done' and 'parallel' in the pipeline, e.g. for zipbombs.
+		for i in ./"$DLDIR"/gz/*.tar.gz
+		do
+			printf "%s\n" "$i"
+		done | SHELL=/usr/bin/bash parallel -j8 -k '
+		TMP={}           # DLDIR/gz/A.tar.gz
+		TMP=${TMP##*/}   # A.tar.gz
+		TMP=${TMP%.tar.gz} # A
+		mkdir ./"'"$DLDIR"'"/ext/"$TMP"
+		OUT=$(bsdtar -C ./"'"$DLDIR"'"/ext/"$TMP" -xvf "{}" 2>&1 >/dev/null | grep -v "^x [^:]*$")
+		[[ "$OUT" != "" ]] && printf "Errors in decompressing %s:\n%b\n\n" "$TMP" "$OUT"
+		' > ./"$RESULTDIR"/extractbugs
 
-	pushd ./"$DLDIR"/ext >/dev/null
+		pushd ./"$DLDIR"/ext >/dev/null
 
-	find . -type f -executable | SHELL=/usr/bin/bash parallel -m 'stat -c "%A %n" {}' > "$HOSTPATH"/"$RESULTDIR"/executablebugs 
-	find . -maxdepth 2 -mindepth 2 -type d | SHELL=/usr/bin/bash parallel -m 'chmod 755 --preserve-root {}'
-	find . -type f ! -perm 644 | SHELL=/usr/bin/bash parallel -m 'chmod 644 --preserve-root {}'
-	popd >/dev/null
+		find . -type f -executable | SHELL=/usr/bin/bash parallel -m 'stat -c "%A %n" {}' > "$HOSTPATH"/"$RESULTDIR"/executablebugs 
+		find . -maxdepth 2 -mindepth 2 -type d | SHELL=/usr/bin/bash parallel -m 'chmod 755 --preserve-root {}'
+		find . -type f ! -perm 644 | SHELL=/usr/bin/bash parallel -m 'chmod 644 --preserve-root {}'
+		popd >/dev/null
+	fi
 }
 
-#cleanup
-#genpkgs
-#genassoc
-#extractpkgs
+FROMABS=false
+while getopts "a" OPTION; do
+	case "$OPTION" in
+		a)
+			FROMABS=true
+			;;
+	esac	
+done
+
+cleanup
+genpkgs
+genassoc
+extractpkgs

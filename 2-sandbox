@@ -23,24 +23,38 @@ sourceall() {
 
 	pushd "$VMWORKDIR"/ext >/dev/null
 	# Blacklist just consists of a grep -v before piping into the parallel operation.
+	# Since packages in the repos and AUR need to have different names, it's fine to have one grep -v.
 	# systemd-nspawn <=207 will need to have msg, msg2, error, warning and plain touched in /usr/bin.  89acb09394 fixed that.
 	# TODO: systemd-nspawn is noisy, saying every time a container is created and exits (which gets buffered into parallel)
-	find . -mindepth 2 -maxdepth 3 -type f -name PKGBUILD | grep -v "/openttd-bin-r25151/" | SHELL=/usr/bin/bash parallel -m -j8 "
-		sudo systemd-nspawn --machine='container-{#}' --bind-ro=/usr/bin/echo:/usr/bin/msg --bind-ro=/usr/bin/echo:/usr/bin/msg2 --bind-ro=/usr/bin/echo:/usr/bin/error --bind-ro=/usr/bin/echo:/usr/bin/warning --bind-ro=/usr/bin/echo:/usr/bin/plain --bind-ro='$VMHOSTPATH/2.1-nspawn' --bind-ro='$VMHOSTPATH/config' --bind-ro='$VMWORKDIR' --bind='$VMTMPDIR' --private-network -D '$NSPAWN_CONTAINER' /usr/bin/su - $VMUSER -c "'"'"cd $VMHOSTPATH; $VMHOSTPATH/2.1-nspawn '{}'"'"'"
+	
+	$FROMABS && MINDEPTH=1 && OPTS="-a"
+	! $FROMABS && MINDEPTH=2 && OPTS=""
+	find . -mindepth $MINDEPTH -maxdepth $((MINDEPTH+1)) -type f -name PKGBUILD | grep -v "/openttd-bin-r25151/" | SHELL=/usr/bin/bash parallel -m -j8 "
+		sudo systemd-nspawn --machine='container-{#}' --bind-ro=/usr/bin/echo:/usr/bin/msg --bind-ro=/usr/bin/echo:/usr/bin/msg2 --bind-ro=/usr/bin/echo:/usr/bin/error --bind-ro=/usr/bin/echo:/usr/bin/warning --bind-ro=/usr/bin/echo:/usr/bin/plain --bind-ro='$VMHOSTPATH/2.1-nspawn' --bind-ro='$VMHOSTPATH/config' --bind-ro='$VMWORKDIR' --bind='$VMTMPDIR' --private-network -D '$NSPAWN_CONTAINER' /usr/bin/su - $VMUSER -c "'"'"cd $VMHOSTPATH; $VMHOSTPATH/2.1-nspawn $OPTS '{}'"'"'"
 	"
 	popd >/dev/null
 }
 
 archiveresults() {
 	# Clean up multiple URLs.  Only include URLs containing ://, after stripping the renaming (so a::url and b::url don't force url to be checked twice) and strip trailing slash.
-	cd "$VMTMPDIR"
+	pushd "$VMTMPDIR" >/dev/null
 	find ./temporary -empty -exec rm -rf {} \;
 	cat sources-container-* | sed 's/::/\n/;s/^.*\n//' | cat - urls-container-* | sed '\|://|!d;s|/$||' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > urllist
 	cat pkgs-container-* | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > pkgslist
 	cat splitpkgs-container-* | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > splitpkgslist
 	rm urls-container-* sources-container-* pkgs-container-* splitpkgs-container-*
 	tar -zcf "$VMHOSTPATH"/"$RESULTDIR"/sourceall.tar.gz *
+	popd >/dev/null
 }
+
+FROMABS=false
+while getopts "a" OPTION; do
+	case "$OPTION" in
+		a)
+			FROMABS=true
+			;;
+	esac	
+done
 
 # update
 # syncfiles
