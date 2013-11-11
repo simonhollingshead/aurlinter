@@ -28,6 +28,7 @@ genassoc() {
 		sudo pkgfile -u
 		ALLPKGS="$(pacman -Slq core extra multilib community)"
 		SHELL=/usr/bin/bash parallel -m 'expac -S1 "%n %p" -- {}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgowners
+		SHELL=/usr/bin/bash parallel -m 'expac -S1 "%n %r" -- {}' <<< "$ALLPKGS" > "$HOSTPATH"/"$RESULTDIR"/pkgrepos
 	else
 		pushd ./"$DLDIR"/gz/ >/dev/null
 		ALLPKGS="$(split *.tar.gz)"

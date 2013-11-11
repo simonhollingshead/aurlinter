@@ -40,8 +40,8 @@ archiveresults() {
 	pushd "$VMTMPDIR" >/dev/null
 	find ./temporary -empty -exec rm -rf {} \;
 	cat sources-container-* | sed 's/::/\n/;s/^.*\n//' | cat - urls-container-* | sed '\|://|!d;s|/$||' | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > urllist
-	cat pkgs-container-* | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > pkgslist
-	cat splitpkgs-container-* | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > splitpkgslist
+	! $FROMABS && cat pkgs-container-* | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > pkgslist
+	! $FROMABS && cat splitpkgs-container-* | awk 'BEGIN{RS=ORS="\n"}!a[$0]++' > splitpkgslist
 	rm urls-container-* sources-container-* pkgs-container-* splitpkgs-container-*
 	tar -zcf "$VMHOSTPATH"/"$RESULTDIR"/sourceall.tar.gz *
 	popd >/dev/null
