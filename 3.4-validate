@@ -10,10 +10,7 @@
 # VCS source but non-vcs package.
 # Full version number in pkgname.
 # Non skip for whole repository.
-# lp: bzr urls?
 # Default options.
-# License suggestions?
-# Make custom:CCPL bad, despite CCPL also being invalid?
 # Use the faillog to explain /why/ URLs are bad.
 # May not correctly identify pkgrel dependence.
 #
@@ -443,14 +440,12 @@ validate_disgustingstrings() {
 	[[ "$FUNCTIONCONTENT" =~ (\$|\{)startdir([^A-Za-z0-9_]|$) ]] && echo "[!!!] Appears to rely on startdir, which is deprecated, in ${1#pkgbuildfunction_}()."
 	[[ "$FUNCTIONCONTENT" =~ (\$|\{)(srcdir|pkgdir)/\.\.([^A-Za-z0-9_]|$) ]] && echo "[!!!] Appears to traverse up a directory from the srcdir or pkgdir, in ${1#pkgbuildfunction_}()."
 	[[ "$ROVERBOSITY" -ge 2 ]] && local N=$'\n' && [[ "${FUNCTIONCONTENT//$N/ }" =~ \|\|($'\n'|$'\t'|$'\v'|$'\f'|$'\r'| )*return ]] && echo "[!! ] Found using '|| return' within ${1#pkgbuildfunction_}()."
-	[[ "$ROVERBOSITY" -ge 2 ]] && local SHEBANG && read -rn 2 SHEBANG < <(cat "./$DLDIR/$EXTDIR/$ARCHIVENAME/$INNERFOLDER/PKGBUILD") && [[ "$SHEBANG" == "#!" ]] && echo "[!! ] PKGBUILDs should not begin with a shebang.  They will be sourced, not executed."
 	# FIXME: False positive if sed-ing. (, |, whitespace are acceptable. ${CARCH#...?
 	# [[ "$ROVERBOSITY" -ge 4 ]] && [[ "$FUNCTIONCONTENT" =~ ([^A-Za-z0-9_]|^)(CARCH|CFLAGS|CHOST|CPPFLAGS|CXXFLAGS|DEBUG_CFLAGS|DEBUG_CXXFLAGS|LDFLAGS|MAKEFLAGS|MAKEOPTS)+?= ]] && echo "[   ] Found setting one of the many sets of build flags.  Check if it is still needed in ${1#pkgbuildfunction_}()."
 }
 
 validate_varsandfuncs() {
-	local HASPACKAGE=false
-	local HASBUILD=false
+	local HASPACKAGE=false HASBUILD=false HASPKGVER=false
 	ISSPLIT=false
 	ALLSETVARS=($(sed "/^_/d;s/=.*//" "$PACKAGE"))
 	for SETVARIABLE in "${ALLSETVARS[@]}"
@@ -460,7 +455,7 @@ validate_varsandfuncs() {
 			[[ "$SETVARIABLE" == "pkgbuildfunction_package" ]] && HASPACKAGE=true && continue
 			[[ "$SETVARIABLE" == "pkgbuildfunction_package_"* ]] && HASPACKAGE=true && ISSPLIT=true && continue
 			[[ "$SETVARIABLE" == "pkgbuildfunction_build" ]] && HASBUILD=true && continue
-			[[ "$ROVERBOSITY" -ge 2 ]] && [[ "$SETVARIABLE" == "pkgbuildfunction_pkgver" ]] && ! $VCSPKG && echo "[!! ] This is not a VCS package, but it still uses pkgver()." && continue
+			[[ "$SETVARIABLE" == "pkgbuildfunction_pkgver" ]] && HASPKGVER=true && continue
 			if [[ "$ROVERBOSITY" -ge 4 ]]; then
 				local ACTUALFUNCTION="${SETVARIABLE#pkgbuildfunction_}"
 				inarray false "$ACTUALFUNCTION" "${RONONSPECIALFUNCTIONS[@]}" || echo "[   ] PKGBUILD contains non-standard function $ACTUALFUNCTION().  This may be intentional."
@@ -471,6 +466,10 @@ validate_varsandfuncs() {
 		fi
 	done
 	! $HASPACKAGE && $HASBUILD && echo "[!!!] Packages that have build() but no package() are deprecated."
+	[[ "$ROVERBOSITY" -ge 3 ]] && $HASPKGVER && ! $VCSPKG && echo "[!  ] This is not a VCS package, but it uses pkgver()."
+	[[ "$ROVERBOSITY" -ge 3 ]] && ! $HASPKGVER && $VCSPKG && echo "[!  ] This is a VCS package, but it does not use pkgver()."
+	[[ "$ROVERBOSITY" -ge 2 ]] && local SHEBANG && read -rn 2 SHEBANG < <(cat "./$DLDIR/$EXTDIR/$ARCHIVENAME/$INNERFOLDER/PKGBUILD") && [[ "$SHEBANG" == "#!" ]] && echo "[!! ] PKGBUILDs should not begin with a shebang.  They will be sourced, not executed."
+
 }
 
 FROMABS=false

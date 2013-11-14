@@ -1,21 +1,25 @@
-KNOWN BUGS, FIXED FOR NEXT RUN:
-
-- Blank variables could cause two messages if both the blank check and analysis stage identified the empty string.  This still exists in the next run in certain situations (Empty source array is an 'empty array' issue, but is also a 'this package has no sources' error, which is required since the initial detection is -vvv, but the source validity check is -v).
-- There was no clear indication of message severity.  Worst severity bugs are those that stop generation of a pkg.tar.gz file, or will when a deprecated element is finally removed.
-- Metadata for some packages was wrong in the case where a pkgname did not match the archive name.
-- Logs didn't contain any messages about CRLF PKGBUILDs.
-- Split PKGBUILDs may contain excessive messages about mmissing variables that are actually set in the package_* functions.
-- PKGBUILDs with no build() do not need a package(), but the analysis phase was not aware of this.
-
 KNOWN UNFIXED BUGS:
 
 - bzr+lp: URLs are considered invalid because the URL tester only runs over '://' containing URLs right now.
+- Packages that use a revision from a VCS repo should not cause a message about not needing a pkgver().
+- custom:CCPL is an invalid license, since the CCPL range is in common, but does not cause a warning message.
+- Protocols other than those in the default DLAGENT get [!!!]
+- Protocols such as `hib` get [!!!] messages for being unreachable, even though it's just because urlcheck doesn't know how to.
+- If a PKGBUILD is in CRLF form, it does not get evaluated, when it should probably be converted and linted nonetheless.
+- If a PKGBUILD lists no sources, the 'variable is empty' loop emits a [!  ] warning, then the validate step emits a [!!!] warning.
+
 
 QUESTIONS:
 
+Are there any things this tool cannot detect?
+
+Yes.  If two of the same function are defined, one after the other, only the one as would be used during the makepkg process will actually be linted, and no messages of any kind will be emitted about the previous.
+
+--
+
 Why does my report say a package source is down?  It's up!  I can see it is!
 
-In order to validate a URL, it is fetched multiple times over a day or two.  If it happens that the server suffers downtime exactly when the checks take place, it will be miscategorised.  Currently, it is also the case that URL patterns that have to have their own DLAGENT are considered to always fail.  This will be resolved.
+In order to validate a URL, it is fetched multiple times over a day or two.  If it happens that the server suffers downtime exactly when the checks take place, it will be miscategorised.
 
 --
 
@@ -27,7 +31,7 @@ If you are providing an array of elements, each element is tested in turn.  In t
 
 Why does my package show twice with the same errors, one as (i686) and once as (x86_64)?
 
-If your PKGBUILD has any variables set specially based on the CARCH, then it goes through the report generator once per CARCH, otherwise one analysis phase called 'allarches' occurs.  As it currently stands, there is no aggregation step if the issues in the package are identical regardless of CARCH.
+If your PKGBUILD has any variables set specially based on the CARCH, then it goes through the report generator once per CARCH, otherwise one analysis phase called 'allarches' occurs.  There is no aggregation step if the issues in the package are identical regardless of CARCH.
 
 --
 

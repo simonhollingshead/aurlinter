@@ -6,8 +6,8 @@
 source config
 
 update() {
-	sudo /usr/bin/pacman -Syu
-	sudo systemd-nspawn -D "$NSPAWN_CONTAINER" /usr/bin/pacman -Syu
+	sudo /usr/bin/pacman --noconfirm -Syu
+	sudo systemd-nspawn -D "$NSPAWN_CONTAINER" /usr/bin/pacman --noconfirm -Syu
 }
 
 syncfiles() {
@@ -56,7 +56,7 @@ while getopts "a" OPTION; do
 	esac	
 done
 
-# update
-# syncfiles
-# sourceall
-# archiveresults
+update
+syncfiles
+sourceall
+archiveresults
