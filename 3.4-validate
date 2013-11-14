@@ -287,7 +287,7 @@ validate_source() {
 			LOCALINSTALL=true
 		fi
 	done
-	[[ "$ROVERBOSITY" -ge 3 ]] && ! $LOCALINSTALL && [[ "${#URLLIST[@]}" == 0 ]] && echo "[!  ] Package only uses files from the source archive (may be legitimate, but may be bundling binaries or a trivial package)." && return 
+	[[ "$ROVERBOSITY" -ge 3 ]] && ! $LOCALINSTALL && [[ "${#URLLIST[@]}" == 0 ]] && echo "[!  ] Package only uses files from the source archive (may be legitimate, but may be a trivial package or one bundling its binaries into the archive)." && return 
 	COMPARETO=$(IFS=$'\n'; grep -Fxf <(echo "${URLLIST[*]}" | sed "s|::|\n|;s|^.*\n||;s|/$||") "./$RESULTDIR/urllist"); [[ "$COMPARETO" != "" ]] && echo "[!!!] The following source URLs appeared unresponsive:" && echo "$COMPARETO"
 }
 
