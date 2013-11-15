@@ -1,12 +1,14 @@
 KNOWN UNFIXED BUGS:
 
-- bzr+lp: URLs are considered invalid because the URL tester only runs over '://' containing URLs right now.
+MAJOR:
+- All bzr+lp: URLs are thought to be local, not remote URLs.  This causes them to claim to not exist with urgent priority.
+- All non-default protocols get urgent messages about being unreachable simply because the tool never tries.
+
+MINOR:
 - Packages that use a revision from a VCS repo should not cause a message about not needing a pkgver().
 - custom:CCPL is an invalid license, since the CCPL range is in common, but does not cause a warning message.
-- Protocols other than those in the default DLAGENT get [!!!]
-- Protocols such as `hib` get [!!!] messages for being unreachable, even though it's just because urlcheck doesn't know how to.
-- If a PKGBUILD is in CRLF form, it does not get evaluated, when it should probably be converted and linted nonetheless.
-- If a PKGBUILD lists no sources, the 'variable is empty' loop emits a [!  ] warning, then the validate step emits a [!!!] warning.
+- CRLF PKGBUILDs entirely fail.  It'd be nice if they converted and linted, just with a massive error about line endings.  (CRLF PKGBUILDs are refused by makepkg)
+- If a PKGBUILD lists no sources, the expected [!!!] warning is thrown, but a [!  ] warning is also thrown which should be suppressed.
 
 
 QUESTIONS:
